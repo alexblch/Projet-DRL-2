@@ -1,7 +1,8 @@
 import numpy as np
 import random
 from collections import deque
-from neuralnetwork import create_model  # Assurez-vous que le fichier est correctement importé
+from DQN.neuralnetwork import create_model
+
 
 class DQNAgent:
     def __init__(self, state_size, action_size, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995, batch_size=32):
@@ -83,6 +84,7 @@ class DQNAgent:
 
     def train(self, episodes=1000, update_target_every=10):
         """Entraîne l'agent sur un nombre spécifié d'épisodes"""
+        rewards = []  # Suivi des récompenses
         for e in range(episodes):
             state = np.reshape(env.reset(), [1, self.state_size])
             total_reward = 0
@@ -104,6 +106,18 @@ class DQNAgent:
                 # Entraînement périodique avec les expériences stockées
                 self.replay()
 
+            # Ajout de la récompense totale à la liste pour analyse
+            rewards.append(total_reward)
+
             # Mise à jour du modèle cible tous les 'update_target_every' épisodes
             if e % update_target_every == 0:
                 self.update_target_model()
+
+        # Tracer les récompenses cumulées après l'entraînement
+        import matplotlib.pyplot as plt
+        plt.plot(rewards)
+        plt.title("Total Rewards per Episode")
+        plt.xlabel("Episodes")
+        plt.ylabel("Rewards")
+        plt.show()
+
