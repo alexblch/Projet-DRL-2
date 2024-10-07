@@ -18,11 +18,12 @@ def create_model(input_shape, action_space, layer_sizes=[128, 128], learning_rat
     model.add(layers.Dense(layer_sizes[0], activation='relu'))
     model.add(layers.Dense(layer_sizes[1], activation='relu'))
     model.add(layers.Dense(layer_sizes[0], activation='relu'))
+    
     # Couche de sortie pour les valeurs Q
     model.add(layers.Dense(action_space, activation='linear'))
 
     # Utilisation de MSE comme fonction de perte
-    loss = tf.keras.losses.Huber()
+    loss = tf.keras.losses.MeanSquaredError()
     
     # Compilation du modèle avec Adam
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss=loss)

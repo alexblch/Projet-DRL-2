@@ -1,5 +1,5 @@
 import numpy as np
-from DQN.luckynumber import LuckyNumberEnv
+from Environnements.luckynumber import LuckyNumberEnv
 from DQN.dqn import DQNAgent
 # from reinforce import REINFORCEAgent  # Ajoutez votre implémentation REINFORCE ici
 import os
@@ -64,7 +64,7 @@ def main():
                 agent.update_target_model()
                 print(f"Episode: {e}/{EPISODES}, Score: {total_reward}, Epsilon: {agent.epsilon}")
                 env.list_scores.append(time+1)
-                print("scores:", env.list_scores)
+                print(time+1)
                 break
 
             if len(agent.memory) > batch_size:

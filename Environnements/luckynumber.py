@@ -1,3 +1,4 @@
+from numba import njit
 import numpy as np
 import random
 
@@ -35,7 +36,7 @@ class LuckyNumberEnv:
             return -1  # Retourne une valeur spéciale pour indiquer qu'il n'y a plus de tuiles
 
     def is_valid_action(self, row, col, number):
-        """Vérifie si une action est valide en respectant le tri croissant dans les lignes et colonnes, et globalement entre les lignes."""
+        """Vérifie si une action est valide"""
         if number == -1:
             return False  # Si aucun nombre n'est disponible, l'action est invalide
 
@@ -46,43 +47,33 @@ class LuckyNumberEnv:
         for i in range(self.rows):
             if self.state[i][col] != 0:  # Ignorer les zéros
                 if i < row and self.state[i][col] >= number:
-                    # print(f"Nombre {number} à la position ({row}, {col}) est inférieur ou égal à {self.state[i][col]} au-dessus dans la colonne")
                     return False  # Le nombre doit être plus grand que ceux au-dessus
                 if i > row and self.state[i][col] <= number:
-                    # print(f"Nombre {number} à la position ({row}, {col}) est supérieur ou égal à {self.state[i][col]} en dessous dans la colonne")
                     return False  # Le nombre doit être plus petit que ceux en dessous
 
         # Vérification du tri croissant dans la ligne
         for j in range(self.cols):
             if self.state[row][j] != 0:  # Ignorer les zéros
                 if j < col and self.state[row][j] >= number:
-                    # print(f"Nombre {number} à la position ({row}, {col}) est inférieur ou égal à {self.state[row][j]} à gauche dans la ligne")
                     return False  # Le nombre doit être plus grand que ceux à gauche
                 if j > col and self.state[row][j] <= number:
-                    # print(f"Nombre {number} à la position ({row}, {col}) est supérieur ou égal à {self.state[row][j]} à droite dans la ligne")
                     return False  # Le nombre doit être plus petit que ceux à droite
 
         # Vérification que le max de la ligne est inférieur au min de la ligne suivante
-        if row < self.rows - 1:  # S'assurer qu'on ne dépasse pas les limites de la grille
-            max_current_row = max([num for num in self.state[row] if num != 0], default=-float('inf'))  # Max de la ligne courante (ignorer les zéros)
-            min_next_row = min([num for num in self.state[row + 1] if num != 0], default=float('inf'))  # Min de la ligne suivante (ignorer les zéros)
+        if row < self.rows - 1:
+            max_current_row = max([num for num in self.state[row] if num != 0], default=-float('inf'))
+            min_next_row = min([num for num in self.state[row + 1] if num != 0], default=float('inf'))
 
-            if number >= min_next_row:
-                # print(f"Le nombre {number} à la position ({row}, {col}) est supérieur ou égal au minimum de la ligne suivante ({min_next_row})")
+            if number >= min_next_row or max_current_row >= number:
                 return False
-            if max_current_row >= number:
-                # print(f"Le max de la ligne actuelle ({max_current_row}) est supérieur ou égal au nombre {number}")
-                return False 
 
         return True
-
 
     def step(self, action):
         """Exécute l'action de l'agent"""
         if self.done:
             return self.state.flatten(), self.reward, self.done, {}
 
-        # L'agent joue en premier
         row, col = divmod(action, self.cols)
         number = self.get_random_trefle()
 
@@ -90,23 +81,16 @@ class LuckyNumberEnv:
             self.done = True
             return self.state.flatten(), self.reward, self.done, {}
 
-        # Si l'action est valide
         if self.is_valid_action(row, col, number):
             self.state[row][col] = number
-            self.reward = 1  # Récompense pour un coup valide
-            # print(f"\nAgent a placé {number} à la position ({row}, {col})")
-            # self.render_agent()  # Afficher l'état après l'action de l'agent
-            if self.check_completion(row, col):  # Vérifie si une ligne ou colonne est complétée
-                self.reward += 10  # Bonus pour complétion
-                print("Agent a complété une ligne ou colonne!")
+            self.reward = 1
+            if self.check_completion(row, col):
+                self.reward += 10
         else:
-            self.reward = -1  # Pénalité pour un coup invalide
-            print(f"\nAgent a tenté un coup invalide à la position ({row}, {col})")
+            self.reward = -1
 
-        # Si la grille est pleine ou aucune action possible
         if not self._can_play():
             self.done = True
-            return self.state.flatten(), self.reward, self.done, {}
 
         return self.state.flatten(), self.reward, self.done, {}
 
@@ -139,8 +123,7 @@ class LuckyNumberEnv:
         print(f"Récompense actuelle : {self.reward}")
         if self.done:
             print("Partie terminée")
-            
-            
+
     def graph_scores(self):
         """Affiche un graphique des scores cumulés par épisode"""
         import matplotlib.pyplot as plt
