@@ -1,6 +1,7 @@
 import numpy as np
-from Environnements.luckynumber import LuckyNumberEnv, LuckyNumbersGame
+from Environnements.luckynumbergame import LuckyNumbersGame
 from DQN.dqn import DQNAgent
+from Environnements.luckynumberenv import LuckyNumbersEnv
 # from reinforce import REINFORCEAgent  # Ajoutez votre implémentation REINFORCE ici
 import os
 import tkinter as tk  # Importer Tkinter
@@ -34,24 +35,16 @@ def choose_algorithm(state_size, action_size):
 def choose_game():
     """Menu pour choisir le jeu et l'action à effectuer."""
     print("Veuillez choisir le jeu :")
-    print("1 - Lucky Number")
-    print("2 - GridWorld")
-    game_choice = input("Entrez votre choix (1 ou 2) : ")
+    print("1 - Lucky Number classique vs agent random")
+    print("2 - Lucky Number - Entraîner un agent")
+    print("3 - GridWorld")
+    game_choice = input("Entrez votre choix (1, 2 ou 3) : ")
 
     if game_choice == '1':
-        print("Lucky Number sélectionné.")
-        print("Voulez-vous jouer contre un agent aléatoire ou entraîner un agent ?")
-        print("1 - Jouer contre un agent aléatoire")
-        print("2 - Entraîner un agent")
-        action_choice = input("Entrez votre choix (1 ou 2) : ")
-        if action_choice == '1':
-            return 'play', 'LuckyNumber'
-        elif action_choice == '2':
-            return 'train', 'LuckyNumber'
-        else:
-            print("Choix invalide. Retour au menu principal.")
-            return None, None
+        return 'play_classic', 'LuckyNumber'
     elif game_choice == '2':
+        return 'train', 'LuckyNumber'
+    elif game_choice == '3':
         print("GridWorld sélectionné.")
         # Vous pouvez ajouter des options pour GridWorld ici
         print("Fonctionnalité non implémentée pour GridWorld.")
@@ -62,58 +55,65 @@ def choose_game():
 
 def main():
     action, game = choose_game()
-    if action == 'play' and game == 'LuckyNumber':
-        # Lancer le jeu contre un agent aléatoire
-        print("Lancement du jeu Lucky Number contre un agent aléatoire.")
+    if action == 'play_classic' and game == 'LuckyNumber':
+        # Lancer le jeu Lucky Number classique contre un agent aléatoire
+        print("Lancement du jeu Lucky Number classique contre un agent aléatoire.")
         root = tk.Tk()  # Créer la fenêtre principale Tkinter
         game_instance = LuckyNumbersGame(root)  # Passer 'root' à LuckyNumbersGame
         root.mainloop()  # Lancer la boucle principale Tkinter
     elif action == 'train' and game == 'LuckyNumber':
         # Entraîner l'agent pour Lucky Number
         print("Entraînement de l'agent pour Lucky Number.")
-        env = LuckyNumberEnv()
-        state_size = env.rows * env.cols
-        action_size = env.action_space
+        env = LuckyNumbersEnv()
+        state_size = env.state_description().shape[0]
+        action_size = env.action_mask().shape[0]
 
         agent, algo = choose_algorithm(state_size, action_size)  # Sélectionner l'algorithme
         batch_size = 32
         EPISODES = int(input("Entrez le nombre d'épisodes pour l'entraînement (par ex. 1000) : "))
 
         # Vérifie si le répertoire 'models' existe, sinon le crée
-        if not os.path.exists(f'{algo}/models'):
-            os.makedirs(f'{algo}/models')
+        if not os.path.exists(f'models/saved_models'):
+            os.makedirs(f'models/saved_models')
 
         for e in range(EPISODES):
-            state = env.reset()
-            state = np.reshape(state, [1, state_size])
+            env.reset()
+            state = env.state_description()
+            done = env.is_game_over()
+
             total_reward = 0
 
-            for time in range(500):
-                action = agent.act(state, env)  # L'agent agit selon l'algorithme choisi
-                next_state, reward, done, _ = env.step(action)
-                total_reward += reward
+            while not done:
+                available_actions = env.available_actions_ids()
+                action_mask = env.action_mask()
 
-                reward = reward if not done else -10
-                next_state = np.reshape(next_state, [1, state_size])
+                # L'agent choisit une action
+                action = agent.choose_action(state, available_actions, action_mask)
 
-                agent.remember(state, action, reward, next_state, done)
-                state = next_state
-
-                if done:
-                    print(f"Partie terminée après {time+1} tours.")
-                    agent.update_target_model()
-                    print(f"Episode: {e+1}/{EPISODES}, Score: {total_reward}, Epsilon: {agent.epsilon}")
-                    env.list_scores.append(time+1)
+                # Exécute l'action
+                try:
+                    env.step(action)
+                except ValueError as e:
+                    print(f"Action invalide: {e}")
+                    done = True
+                    reward = -1  # Pénalité pour action invalide
+                    agent.learn(state, action, reward, state, done, action_mask)
                     break
 
-                if len(agent.memory) > batch_size:
-                    agent.replay()
+                # Obtenir le nouvel état et la récompense
+                next_state = env.state_description()
+                reward = env.score()
+                done = env.is_game_over()
+                action_mask_next = env.action_mask()
 
-            if e % 50 == 0:
-                # Sauvegarder dans un dossier spécifique à l'algorithme choisi
-                agent.save(f"{algo}/models/model_weights_episode_{e}.h5")
+                # L'agent apprend de l'expérience
+                agent.learn(state, action, reward, next_state, done, action_mask_next)
 
-        env.graph_scores()
+                state = next_state
+                total_reward += reward
+
+            print(f"Episode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {agent.epsilon}")
+
         print("Entraînement terminé.")
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")

@@ -1,142 +1,9 @@
 from numba import njit
 import numpy as np
 import random
-
-class LuckyNumberEnv:
-    def __init__(self):
-        self.RED = "\033[31m"
-        self.GREEN = "\033[32m"
-        self.YELLOW = "\033[33m"
-        self.BLUE = "\033[34m"
-        self.RESET = "\033[0m"
-        self.rows = 4
-        self.cols = 4
-        self.state = np.zeros((self.rows, self.cols))  # Grille 4x4
-        self.done = False
-        self.action_space = self.rows * self.cols  # 16 actions possibles (une pour chaque case)
-        self.reward = 0
-        self.available_numbers = []  # Liste des nombres disponibles pour tirage
-        self.list_scores = []  # Liste des scores pour chaque épisode
-
-    def reset(self):
-        """Réinitialise l'état du jeu pour un nouvel épisode"""
-        self.state = np.zeros((self.rows, self.cols))
-        self.done = False
-        self.reward = 0
-        self.available_numbers = list(range(1, 21))  # Réinitialise la liste des nombres uniques
-        random.shuffle(self.available_numbers)  # Mélange les nombres disponibles
-        return self.state.flatten()  # Retourne un vecteur 1D pour l'état
-
-    def get_random_trefle(self):
-        """Tire un nombre aléatoire unique de la liste des nombres disponibles."""
-        if self.available_numbers:
-            return self.available_numbers.pop()  # Retire et retourne un nombre unique
-        else:
-            self.done = True
-            return -1  # Retourne une valeur spéciale pour indiquer qu'il n'y a plus de tuiles
-
-    def is_valid_action(self, row, col, number):
-        """Vérifie si une action est valide"""
-        if number == -1:
-            return False  # Si aucun nombre n'est disponible, l'action est invalide
-
-        if self.state[row][col] != 0:
-            return False  # Case déjà occupée
-
-        # Vérification du tri croissant dans la colonne
-        for i in range(self.rows):
-            if self.state[i][col] != 0:  # Ignorer les zéros
-                if i < row and self.state[i][col] >= number:
-                    return False  # Le nombre doit être plus grand que ceux au-dessus
-                if i > row and self.state[i][col] <= number:
-                    return False  # Le nombre doit être plus petit que ceux en dessous
-
-        # Vérification du tri croissant dans la ligne
-        for j in range(self.cols):
-            if self.state[row][j] != 0:  # Ignorer les zéros
-                if j < col and self.state[row][j] >= number:
-                    return False  # Le nombre doit être plus grand que ceux à gauche
-                if j > col and self.state[row][j] <= number:
-                    return False  # Le nombre doit être plus petit que ceux à droite
-
-        # Vérification que le max de la ligne est inférieur au min de la ligne suivante
-        if row < self.rows - 1:
-            max_current_row = max([num for num in self.state[row] if num != 0], default=-float('inf'))
-            min_next_row = min([num for num in self.state[row + 1] if num != 0], default=float('inf'))
-
-            if number >= min_next_row or max_current_row >= number:
-                return False
-
-        return True
-
-    def step(self, action):
-        """Exécute l'action de l'agent"""
-        if self.done:
-            return self.state.flatten(), self.reward, self.done, {}
-
-        row, col = divmod(action, self.cols)
-        number = self.get_random_trefle()
-
-        if number == -1:
-            self.done = True
-            return self.state.flatten(), self.reward, self.done, {}
-
-        if self.is_valid_action(row, col, number):
-            self.state[row][col] = number
-            self.reward = 1
-            if self.check_completion(row, col):
-                self.reward += 10
-        else:
-            self.reward = -1
-
-        if not self._can_play():
-            self.done = True
-
-        return self.state.flatten(), self.reward, self.done, {}
-
-    def check_completion(self, row, col):
-        """Vérifie si une ligne ou une colonne est complétée après une action"""
-        row_complete = np.all(self.state[row] > 0) and np.all(np.diff(self.state[row]) > 0)
-        col_complete = np.all(self.state[:, col] > 0) and np.all(np.diff(self.state[:, col]) > 0)
-
-        return row_complete or col_complete
-
-    def _can_play(self):
-        """Vérifie s'il reste des actions valides possibles avec les nombres disponibles."""
-        for i in range(self.rows):
-            for j in range(self.cols):
-                if self.state[i][j] == 0:  # Case vide
-                    for number in self.available_numbers:  # Vérifie seulement les nombres disponibles
-                        if self.is_valid_action(i, j, number):
-                            return True  # Si au moins une action est valide
-        return False  # Aucun placement valide n'est possible
-
-    def render_agent(self):
-        """Affiche la grille après l'action de l'agent"""
-        print("État de la grille après l'action de l'agent :")
-        print(self.state)
-        print(f"Récompense actuelle de l'agent : {self.reward}\n")
-
-    def render(self):
-        """Affiche l'état général de la grille"""
-        print(self.state)
-        print(f"Récompense actuelle : {self.reward}")
-        if self.done:
-            print("Partie terminée")
-
-    def graph_scores(self):
-        """Affiche un graphique des scores cumulés par épisode"""
-        import matplotlib.pyplot as plt
-        plt.plot(self.list_scores)
-        plt.title("Scores cumulés par épisode")
-        plt.xlabel("Épisodes")
-        plt.ylabel("Scores")
-        plt.show()
-
-
 import tkinter as tk
 from tkinter import messagebox
-import random
+
 
 class LuckyNumbersGame:
     def __init__(self, master):
@@ -198,43 +65,45 @@ class LuckyNumbersGame:
             for j in range(self.size):
                 self.ai_labels[i][j].grid(row=i+1, column=self.size+1 + j, padx=5, pady=5)
 
-        # Zone de pioche et cache
+        # Zone de pioche
         self.draw_button = tk.Button(self.frame, text="Piocher une tuile", font=('Helvetica', 14), command=self.draw_tile)
-        self.draw_button.grid(row=self.size+1, column=0, columnspan=self.size, pady=10)
+        self.draw_button.grid(row=self.size+1, column=0, columnspan=self.size*2, pady=10)
 
+        # Bouton ajouter dans le cache
         self.add_to_cache_button = tk.Button(self.frame, text="Ajouter dans le cache", font=('Helvetica', 14), command=self.add_to_cache)
-        self.add_to_cache_button.grid(row=self.size+2, column=0, columnspan=self.size, pady=5)
+        self.add_to_cache_button.grid(row=self.size+2, column=0, columnspan=self.size*2, pady=5)
 
+        # Affichage du cache partagé
+        tk.Label(self.frame, text="Cache :", font=('Helvetica', 14, 'bold')).grid(row=self.size+3, column=0, columnspan=self.size*2)
+        self.cache_frame = tk.Frame(self.frame)
+        self.cache_frame.grid(row=self.size+4, column=0, columnspan=self.size*2, pady=5)
+
+        # Message d'information
         self.info_label = tk.Label(self.frame, text="À vous de jouer!", font=('Helvetica', 14))
         self.info_label.grid(row=self.size+5, column=0, columnspan=self.size*2, pady=10)
 
-        # Affichage du cache partagé
-        tk.Label(self.frame, text="Cache :", font=('Helvetica', 14, 'bold')).grid(row=self.size+1, column=self.size+1, columnspan=self.size)
-        self.cache_frame = tk.Frame(self.frame)
-        self.cache_frame.grid(row=self.size+2, column=self.size+1, columnspan=self.size, pady=5)
-        self.cache_buttons = []
-
         # Bouton pour redémarrer le jeu
         self.restart_button = tk.Button(self.frame, text="Rejouer", font=('Helvetica', 14), command=self.restart_game)
-        self.restart_button.grid(row=self.size+5, column=self.size+1, columnspan=self.size, pady=10)
+        self.restart_button.grid(row=self.size+6, column=self.size*2-1, sticky='e', pady=10)
 
     def update_cache_display(self):
         """Met à jour l'affichage du cache partagé."""
         # Supprimer les anciens boutons du cache
-        for button in self.cache_buttons:
-            button.destroy()
+        for widget in self.cache_frame.winfo_children():
+            widget.destroy()
+
         self.cache_buttons = []
 
         # Créer un bouton pour chaque tuile du cache
         for idx, tile in enumerate(self.shared_cache):
             btn = tk.Button(self.cache_frame, text=str(tile), font=('Helvetica', 14), width=4,
                             command=lambda t=tile: self.select_cache_tile(t))
-            btn.grid(row=0, column=idx, padx=2)
+            btn.pack(side='left', padx=2)
             self.cache_buttons.append(btn)
 
         # Si le cache est vide, afficher un label "Vide"
         if not self.shared_cache:
-            tk.Label(self.cache_frame, text="Vide", font=('Helvetica', 14)).grid(row=0, column=0)
+            tk.Label(self.cache_frame, text="Vide", font=('Helvetica', 14)).pack()
 
     def select_cache_tile(self, tile):
         """Sélectionne une tuile du cache."""
@@ -297,6 +166,11 @@ class LuckyNumbersGame:
             self.info_label.config(text="Vous devez piocher une tuile ou sélectionner une tuile du cache.")
             return
 
+        # Vérifier si le nombre est déjà dans la grille (excluant la case actuelle si on remplace)
+        if self.number_in_grid(self.player_grid, self.current_tile, exclude_position=(row, col)):
+            self.info_label.config(text="Vous ne pouvez pas avoir des nombres identiques dans votre grille.")
+            return
+
         # Vérifier si le remplacement est possible
         can_replace = self.player_grid[row][col] is not None
 
@@ -312,7 +186,8 @@ class LuckyNumbersGame:
 
         # Si on remplace une tuile, l'ancienne va dans le cache
         if can_replace:
-            self.shared_cache.append(self.player_grid[row][col])
+            old_number = self.player_grid[row][col]
+            self.shared_cache.append(old_number)
             self.update_cache_display()
 
         # Placement de la tuile
@@ -351,14 +226,13 @@ class LuckyNumbersGame:
         grid[row][col] = original_value
         return valid
 
-    def cannot_place_tile(self):
-        """Si le joueur ne peut pas placer la tuile, il la met dans le cache."""
-        self.shared_cache.append(self.current_tile)
-        self.update_cache_display()
-        self.current_tile = None
-        self.check_winner()
-        self.turn = 'ai'
-        self.master.after(500, self.ai_turn)
+    def number_in_grid(self, grid, number, exclude_position=None):
+        """Vérifie si un nombre est déjà présent dans la grille."""
+        for i in range(self.size):
+            for j in range(self.size):
+                if (i, j) != exclude_position and grid[i][j] == number:
+                    return True
+        return False
 
     def ai_turn(self):
         if self.turn != 'ai':
@@ -382,7 +256,8 @@ class LuckyNumbersGame:
                 i, j = random.choice(positions)
                 # Si l'IA remplace une tuile, elle ajoute l'ancienne au cache
                 if self.ai_grid[i][j] is not None:
-                    self.shared_cache.append(self.ai_grid[i][j])
+                    old_number = self.ai_grid[i][j]
+                    self.shared_cache.append(old_number)
                     self.update_cache_display()
                 self.ai_grid[i][j] = ai_tile
                 self.ai_labels[i][j].config(text=str(ai_tile), bg='white')
@@ -395,7 +270,11 @@ class LuckyNumbersGame:
         self.info_label.config(text="À vous de jouer!")
 
     def get_valid_positions(self, grid, number):
-        """Retourne une liste des positions valides pour placer le nombre donné, y compris les remplacements."""
+        """Retourne une liste des positions valides pour placer le nombre donné, sans créer de doublons."""
+        # Vérifier si le nombre est déjà présent dans la grille
+        if self.number_in_grid(grid, number):
+            return []
+
         valid_positions = []
         for i in range(self.size):
             for j in range(self.size):
@@ -404,30 +283,49 @@ class LuckyNumbersGame:
                         valid_positions.append((i, j))
                 else:
                     if self.is_valid_placement_with_replacement(grid, i, j, number):
-                        valid_positions.append((i, j))
+                        # S'assurer que le remplacement n'introduit pas de doublon
+                        if not self.number_in_grid(grid, number, exclude_position=(i, j)):
+                            valid_positions.append((i, j))
         return valid_positions
 
     def check_winner(self):
-        if all(all(cell is not None for cell in row) for row in self.player_grid):
-            self.info_label.config(text="Vous avez gagné!")
-            self.end_game()
-            return
+        player_full = all(all(cell is not None for cell in row) for row in self.player_grid)
+        ai_full = all(all(cell is not None for cell in row) for row in self.ai_grid)
 
-        if all(all(cell is not None for cell in row) for row in self.ai_grid):
+        if player_full and ai_full:
+            self.info_label.config(text="Match nul!")
+            self.end_game("Match nul")
+            return
+        elif player_full:
+            self.info_label.config(text="Vous avez gagné!")
+            self.end_game("Victoire")
+            return
+        elif ai_full:
             self.info_label.config(text="L'adversaire a gagné!")
-            self.end_game()
+            self.end_game("Défaite")
             return
 
         if not self.numbers and not self.shared_cache:
-            self.info_label.config(text="Match nul!")
-            self.end_game()
+            player_score = sum(sum(cell for cell in row if cell is not None) for row in self.player_grid)
+            ai_score = sum(sum(cell for cell in row if cell is not None) for row in self.ai_grid)
+            if player_score < ai_score:
+                self.info_label.config(text="Vous avez gagné!")
+                self.end_game("Victoire")
+            elif player_score > ai_score:
+                self.info_label.config(text="L'adversaire a gagné!")
+                self.end_game("Défaite")
+            else:
+                self.info_label.config(text="Match nul!")
+                self.end_game("Match nul")
 
-    def end_game(self):
+    def end_game(self, result):
         for row in self.player_buttons:
             for button in row:
                 button.config(state='disabled')
         self.draw_button.config(state="disabled")
         self.add_to_cache_button.config(state="disabled")
+        # Afficher un message de fin de partie
+        messagebox.showinfo("Fin de la partie", f"{result}!")
         # Laisser le bouton de redémarrage actif
         self.restart_button.config(state="normal")
 
@@ -461,4 +359,7 @@ class LuckyNumbersGame:
         # Placer les tuiles initiales
         self.place_initial_tiles()
 
-
+if __name__ == "__main__":
+    root = tk.Tk()
+    game = LuckyNumbersGame(root)
+    root.mainloop()

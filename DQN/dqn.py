@@ -1,76 +1,105 @@
 from collections import deque
-from DQN.neuralnetwork import create_model
+from models.neuralnetwork import create_model
+import tensorflow as tf
+from tensorflow.keras import layers
 import numpy as np
 import random
 
 class DQNAgent:
-    def __init__(self, state_size, action_size, gamma=0.95, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995, batch_size=32):
-        self.state_size = state_size
-        self.action_size = action_size
-        self.memory = deque(maxlen=2000)  # Mémoire de rejouabilité avec taille limitée
-        self.gamma = gamma    # Discount rate
-        self.epsilon = epsilon  # Exploration rate
-        self.epsilon_min = epsilon_min  # Minimal exploration rate
-        self.epsilon_decay = epsilon_decay  # Decay rate for epsilon
-        self.batch_size = batch_size
-        self.model = create_model((self.state_size,), self.action_size)  # Réseau principal
-        self.target_model = create_model((self.state_size,), self.action_size)  # Réseau cible
-        self.update_target_model()  # Initialisation du modèle cible
+    def __init__(self, state_size, action_size, learning_rate=0.001, gamma=0.99,
+                 epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+        self.state_size = state_size  # Dimension du vecteur d'état
+        self.action_size = action_size  # Nombre total d'actions possibles
+        self.learning_rate = learning_rate
+        self.gamma = gamma  # Facteur de discount pour les récompenses futures
 
-    def remember(self, state, action, reward, next_state, done):
-        """Stocke les expériences dans la mémoire"""
-        self.memory.append((state, action, reward, next_state, done))
+        # Paramètres pour la stratégie epsilon-greedy
+        self.epsilon = epsilon_start  # Valeur initiale de epsilon
+        self.epsilon_min = epsilon_end  # Valeur minimale de epsilon
+        self.epsilon_decay = epsilon_decay  # Taux de décroissance de epsilon
 
-    def update_target_model(self):
-        """Copie les poids du modèle principal dans le modèle cible"""
-        self.target_model.set_weights(self.model.get_weights())
+        # Construire le modèle de réseau neuronal
+        self.model = self.create_model(input_shape=(self.state_size,), action_space=self.action_size, learning_rate=self.learning_rate)
 
-    def save(self, name):
-        """Sauvegarde les poids du modèle"""
-        self.model.save_weights(name)
+    def create_model(self, input_shape, action_space, layer_sizes=[128, 128], learning_rate=0.001):
+        """
+        Crée un modèle de réseau neuronal pour DQN classique avec MSE comme fonction de perte.
+        
+        :param input_shape: La forme de l'état (ex: (16,) pour une grille 4x4).
+        :param action_space: Nombre d'actions possibles (taille de l'espace d'actions).
+        :param layer_sizes: Liste définissant le nombre de neurones dans chaque couche cachée.
+        :param learning_rate: Taux d'apprentissage pour l'optimiseur Adam.
+        :return: Modèle Keras compilé.
+        """
+        model = tf.keras.Sequential()
+        
+        # Couche d'entrée
+        model.add(layers.InputLayer(input_shape=input_shape))
+        model.add(layers.Dense(layer_sizes[0], activation='relu'))
+        model.add(layers.Dense(layer_sizes[1], activation='relu'))
+        # Si nécessaire, vous pouvez ajouter une troisième couche cachée :
+        # model.add(layers.Dense(layer_sizes[0], activation='relu'))
+        
+        # Couche de sortie pour les valeurs Q
+        model.add(layers.Dense(action_space, activation='linear'))
+    
+        # Compilation du modèle avec Adam
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+                      loss='mean_squared_error')
+        
+        return model
 
-    def load(self, name):
-        """Charge les poids du modèle"""
-        self.model.load_weights(name)
+    def choose_action(self, state, available_actions, action_mask):
+        if np.random.rand() < self.epsilon:
+            # Exploration : choisir une action disponible au hasard
+            action = np.random.choice(available_actions)
+        else:
+            # Exploitation : choisir l'action avec la valeur Q la plus élevée parmi les actions disponibles
+            state = np.expand_dims(state, axis=0)
+            q_values = self.model.predict(state, verbose=0)[0]
+            # Appliquer le masque d'actions
+            masked_q_values = np.copy(q_values)
+            masked_q_values[action_mask == 0] = -np.inf  # Ignorer les actions non disponibles
+            action = np.argmax(masked_q_values)
+        return action
 
 
-    def act(self, state, env):
-        """Pas de Numba ici, car cela implique l'usage de modèles et d'environnements complexes"""
-        for _ in range(self.action_size):
-            if np.random.rand() <= self.epsilon:
-                action = random.randrange(self.action_size)
-            else:
-                act_values = self.model.predict(state)
-                action = np.argmax(act_values[0])
+    def learn(self, state, action, reward, next_state, done, action_mask_next):
+        """
+        Met à jour les poids du réseau neuronal basé sur la transition.
 
-            row, col = divmod(action, env.cols)
-            trefle_number = env.get_random_trefle()
-            if env.is_valid_action(row, col, trefle_number):
-                return action
+        Paramètres:
+            state (np.ndarray): L'état précédent.
+            action (int): L'action prise.
+            reward (float): La récompense reçue.
+            next_state (np.ndarray): L'état suivant après l'action.
+            done (bool): True si l'épisode est terminé.
+            action_mask_next (np.ndarray): Masque des actions pour l'état suivant.
+        """
+        state = np.expand_dims(state, axis=0)  # Ajouter la dimension batch
+        next_state = np.expand_dims(next_state, axis=0)
 
-        return random.randrange(self.action_size)
+        # Obtenir les valeurs Q prédites pour l'état actuel
+        q_values = self.model.predict(state, verbose=0)
 
-    def replay(self):
-        if len(self.memory) < self.batch_size:
-            return
+        # Obtenir les valeurs Q prédites pour l'état suivant
+        q_values_next = self.model.predict(next_state, verbose=0)
 
-        minibatch = random.sample(self.memory, self.batch_size)
-        states = np.array([transition[0] for transition in minibatch])
-        next_states = np.array([transition[3] for transition in minibatch])
+        # Masquer les actions non disponibles dans l'état suivant
+        masked_q_values_next = q_values_next + (action_mask_next - 1) * 1e9
 
-        states = np.squeeze(states, axis=1)
-        next_states = np.squeeze(next_states, axis=1)
+        # Calculer la valeur cible Q
+        if done:
+            target = reward
+        else:
+            target = reward + self.gamma * np.max(masked_q_values_next[0])
 
-        targets = self.model.predict(states)
-        target_next = self.target_model.predict(next_states)
+        # Mettre à jour la valeur Q pour l'action prise
+        q_values[0][action] = target
 
-        for i, (state, action, reward, next_state, done) in enumerate(minibatch):
-            if done:
-                targets[i][action] = reward
-            else:
-                targets[i][action] = reward + self.gamma * np.amax(target_next[i])
+        # Entraîner le réseau
+        self.model.fit(state, q_values, epochs=1, verbose=0)
 
-        self.model.fit(states, targets, epochs=1, verbose=0)
-
+        # Décroître epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
