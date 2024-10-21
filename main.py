@@ -2,9 +2,9 @@ import numpy as np
 from Environnements.luckynumbergame import LuckyNumbersGame
 from DQN.dqn import DQNAgent
 from Environnements.luckynumberenv import LuckyNumbersEnv
-# from reinforce import REINFORCEAgent  # Ajoutez votre implémentation REINFORCE ici
 import os
-import tkinter as tk  # Importer Tkinter
+import random
+import tkinter as tk
 
 def clear_screen():
     """Efface l'écran (compatible Windows et Unix)."""
@@ -55,12 +55,14 @@ def choose_game():
 
 def main():
     action, game = choose_game()
+    
     if action == 'play_classic' and game == 'LuckyNumber':
         # Lancer le jeu Lucky Number classique contre un agent aléatoire
         print("Lancement du jeu Lucky Number classique contre un agent aléatoire.")
         root = tk.Tk()  # Créer la fenêtre principale Tkinter
         game_instance = LuckyNumbersGame(root)  # Passer 'root' à LuckyNumbersGame
         root.mainloop()  # Lancer la boucle principale Tkinter
+
     elif action == 'train' and game == 'LuckyNumber':
         # Entraîner l'agent pour Lucky Number
         print("Entraînement de l'agent pour Lucky Number.")
@@ -69,7 +71,6 @@ def main():
         action_size = env.action_mask().shape[0]
 
         agent, algo = choose_algorithm(state_size, action_size)  # Sélectionner l'algorithme
-        batch_size = 32
         EPISODES = int(input("Entrez le nombre d'épisodes pour l'entraînement (par ex. 1000) : "))
 
         # Vérifie si le répertoire 'models' existe, sinon le crée
@@ -97,7 +98,7 @@ def main():
                     print(f"Action invalide: {e}")
                     done = True
                     reward = -1  # Pénalité pour action invalide
-                    agent.learn(state, action, reward, state, done, action_mask)
+                    agent.learn(state, action, reward, state, done, action_mask)  # Apprentissage immédiat
                     break
 
                 # Obtenir le nouvel état et la récompense
@@ -106,13 +107,14 @@ def main():
                 done = env.is_game_over()
                 action_mask_next = env.action_mask()
 
-                # L'agent apprend de l'expérience
+                # L'agent apprend immédiatement après la transition
                 agent.learn(state, action, reward, next_state, done, action_mask_next)
 
                 state = next_state
                 total_reward += reward
 
             print(f"Episode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {agent.epsilon}")
+
 
         print("Entraînement terminé.")
     else:
