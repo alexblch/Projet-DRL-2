@@ -1,0 +1,39 @@
+États (States)
+L'état du jeu est déterminé par :
+
+Grille de jeu (4x4) :
+
+Il y a 16 cases dans la grille. Chaque case peut être soit vide, soit occupée par une tuile numérotée entre 1 et 20.
+Cela donne un total de 16 éléments qui représentent l'état de la grille (chaque élément étant soit une tuile, soit vide).
+Tuile à jouer (1 tuile) :
+
+À chaque tour, il y a une tuile active que le joueur doit placer. Cette tuile est un nombre entre 1 et 20 (il y a 40 tuiles au total, car chaque nombre apparaît deux fois). Donc, la tuile à jouer fait partie de l'état.
+Cela ajoute 1 élément à l'état, qui correspond à la tuile piochée ou sélectionnée du cache.
+Cache partagé (tuiles non utilisées) :
+
+Il y a un cache où des tuiles peuvent être placées et récupérées. Si tu considères cela comme un état, alors il peut être représenté par un vecteur contenant les tuiles présentes dans le cache. Cependant, tu n’as pas mentionné la taille exacte du cache ici, donc je vais partir du principe qu'il est facultatif.
+Total pour les États :
+Grille (4x4) : 16 éléments.
+Tuile piochée : 1 élément.
+Si tu n'ajoutes pas explicitement l'état du cache comme partie de l'état global, alors le total des éléments d'état est 17.
+Actions (Actions)
+Les actions correspondent aux choix que le joueur peut faire à chaque tour. Voici une clarification :
+
+Placer une tuile dans la grille :
+
+Il y a 16 cases dans la grille. Si une case est vide, tu peux y placer une tuile. Chaque emplacement vide représente une action possible.
+Cela donne 16 actions possibles pour placer une tuile dans une case vide.
+Ajouter la tuile dans le cache :
+
+Au lieu de placer la tuile piochée dans la grille, tu peux choisir de la mettre dans le cache partagé (si cette action est autorisée dans ton jeu).
+Cela représente 1 action supplémentaire : "mettre la tuile au cache".
+Prendre une tuile du cache et la placer dans la grille :
+
+Si tu peux prendre une tuile du cache et la placer dans la grille, cela pourrait être une action distincte, mais elle devrait être prise en compte dans les actions de placement dans la grille.
+Cela pourrait compter comme 1 action supplémentaire si tu considères que cela nécessite une action différente.
+Total pour les Actions :
+Placer une tuile dans la grille : 16 actions possibles (1 par case vide).
+Ajouter la tuile au cache : 1 action.
+Prendre une tuile du cache et la placer dans la grille : 1 action supplémentaire.
+Total final des actions :
+Cela donne un total de 18 actions possibles, donc ton calcul est correct.
