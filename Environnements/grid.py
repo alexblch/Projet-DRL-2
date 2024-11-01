@@ -1,5 +1,4 @@
 import numpy as np
-import random
 import matplotlib.pyplot as plt
 
 class GridWorld:
@@ -21,12 +20,12 @@ class GridWorld:
         self.agent_pos_row = 0
         self.done = False
         self.reward = 0
-        return self.state.flatten()  # Retourne un vecteur 1D pour l'état
+        return self.state_description()  # Retourne l'état sous forme de vecteur 1D
 
     def step(self, action: int):
         """Exécute l'action de l'agent"""
         if self.done:
-            return self.state.flatten(), self.reward, self.done, {}
+            return self.state_description(), self.reward, self.done, {}
 
         # Mouvement de l'agent
         if action == 0 and self.agent_pos_col > 0:  # Gauche
@@ -44,8 +43,9 @@ class GridWorld:
         # Si l'agent atteint une position de fin, la partie est terminée
         if self.is_game_over():
             self.done = True
+            self.list_scores.append(self.reward)  # Enregistrer le score pour cet épisode
 
-        return self.state.flatten(), self.reward, self.done, {}
+        return self.state_description(), self.reward, self.done, {}
 
     def is_game_over(self) -> bool:
         """Vérifie si le jeu est terminé (si l'agent atteint une position finale)"""
@@ -61,10 +61,17 @@ class GridWorld:
             return -1.0
         return 0.0
 
+    def state_description(self) -> np.ndarray:
+        """Retourne la description de l'état sous forme de vecteur 1D"""
+        # Encode la position de l'agent sous forme de vecteur 1D
+        state = np.zeros((self.rows, self.cols))
+        state[self.agent_pos_row, self.agent_pos_col] = 1  # Position de l'agent marquée par un 1
+        return state.flatten()
+
     def render(self):
         """Affiche la grille actuelle"""
-        for num_row in range(5):
-            for num_col in range(5):
+        for num_row in range(self.rows):
+            for num_col in range(self.cols):
                 print('X' if self.agent_pos_col == num_col and self.agent_pos_row == num_row else '_', end=' ')
             print()
         print(f"Récompense actuelle : {self.reward}")
@@ -79,8 +86,8 @@ class GridWorld:
         plt.ylabel("Scores")
         plt.show()
 
-    def available_actions(self):
-        """Retourne les actions possibles en fonction de la position actuelle de l'agent"""
+    def available_actions_ids(self):
+        """Retourne les actions possibles sous forme d'ID en fonction de la position actuelle de l'agent"""
         actions = []
         if self.agent_pos_col > 0:  # Peut aller à gauche
             actions.append(0)
@@ -90,4 +97,17 @@ class GridWorld:
             actions.append(2)
         if self.agent_pos_row < 4:  # Peut aller en bas
             actions.append(3)
-        return actions
+        return np.array(actions)
+
+    def action_mask(self) -> np.ndarray:
+        """Retourne un masque des actions valides (1 pour valide, 0 pour invalide)"""
+        mask = np.zeros(self.action_space, dtype=np.float32)
+        if self.agent_pos_col > 0:  # Gauche
+            mask[0] = 1
+        if self.agent_pos_col < self.cols - 1:  # Droite
+            mask[1] = 1
+        if self.agent_pos_row > 0:  # Haut
+            mask[2] = 1
+        if self.agent_pos_row < self.rows - 1:  # Bas
+            mask[3] = 1
+        return mask

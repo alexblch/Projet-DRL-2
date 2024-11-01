@@ -43,10 +43,11 @@ class PrioritizedExperienceReplayBuffer:
             self.priorities[idx] = error + 1e-5
 
 class DQNAgentWithPrioritizedReplay:
-    def __init__(self, state_size, action_size, memory_size=2000, batch_size=64, learning_rate=0.001, gamma=0.99,
+    def __init__(self, env, memory_size=2000, batch_size=64, learning_rate=0.001, gamma=0.99,
                  epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, alpha=0.6, beta_start=0.4, beta_increase=1e-3):
-        self.state_size = state_size
-        self.action_size = action_size
+        self.env = env
+        self.state_size = env.state_description().shape[0]
+        self.action_size = env.action_mask().shape[0]
         self.memory = PrioritizedExperienceReplayBuffer(memory_size, alpha)
         self.batch_size = batch_size
         self.learning_rate = learning_rate
@@ -64,8 +65,8 @@ class DQNAgentWithPrioritizedReplay:
         model = tf.keras.Sequential()
         
         model.add(layers.InputLayer(input_shape=input_shape))
-        model.add(layers.Dense(layer_sizes[0], activation='relu'))
-        model.add(layers.Dense(layer_sizes[1], activation='relu'))
+        for size in layer_sizes:
+            model.add(layers.Dense(size, activation='relu'))
         
         model.add(layers.Dense(action_space, activation='linear'))
     
@@ -87,9 +88,11 @@ class DQNAgentWithPrioritizedReplay:
 
     def choose_action(self, state):
         if np.random.rand() < self.epsilon:
-            return random.randrange(self.action_size)
+            return random.choice(self.env.available_actions_ids())
         state = np.expand_dims(state, axis=0)
         q_values = self.model.predict(state, verbose=0)[0]
+        mask = self.env.action_mask()
+        q_values = np.where(mask == 1, q_values, -np.inf)  # Apply action mask to restrict invalid actions
         return np.argmax(q_values)
 
     def replay(self):
@@ -120,3 +123,35 @@ class DQNAgentWithPrioritizedReplay:
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+
+    def train(self, episodes):
+        for e in range(episodes):
+            state = self.env.state_description()
+            self.env.reset()
+            total_reward = 0
+            done = False
+
+            while not done:
+                available_actions = self.env.available_actions_ids()
+                action_mask = self.env.action_mask()
+                action = self.choose_action(state)
+                
+                try:
+                    self.env.step(action)
+                except ValueError as e:
+                    print(f"Action invalide: {e}")
+                    done = True
+                    reward = -1
+                    self.remember(state, action, reward, state, done)
+                    break
+
+                next_state = self.env.state_description()
+                reward = self.env.score()
+                done = self.env.is_game_over()
+                self.remember(state, action, reward, next_state, done)
+                
+                state = next_state
+                total_reward += reward
+
+            print(f"Episode {e + 1}/{episodes}, Total Reward: {total_reward}, Epsilon: {self.epsilon}")
+            self.replay()

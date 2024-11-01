@@ -45,6 +45,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         self._score = 0.0
         self.agent_turn = True
         self.current_tile = None
+        return self.state_description()
 
     def place_initial_tiles(self, grid):
         diagonal_positions = [(i, i) for i in range(self.size)]
@@ -92,12 +93,16 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
             raise ValueError("La partie est terminée, veuillez réinitialiser l'environnement.")
         if not self.agent_turn:
             raise ValueError("Ce n'est pas le tour de l'agent.")
+        
+        reward = 0.0
+
         if action == 0:
             self.current_tile = self.draw_tile()
             if self.current_tile is None:
                 self._is_game_over = True
-                self._score = 0.0
-            return
+                reward = 0.0  # Récompense pour la fin du jeu
+            else:
+                reward = 0.0  # Pas de récompense pour piocher une tuile
         elif action == 1:
             if self.current_tile is None:
                 raise ValueError("Aucune tuile à mettre au cache.")
@@ -105,7 +110,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
             self.current_tile = None
             self.agent_turn = False
             self.opponent_play()
-            return
+            reward = 0.0  # Pas de récompense pour ajouter au cache
         else:
             if self.current_tile is None:
                 raise ValueError("Pas de tuile à placer. Vous devez piocher une tuile d'abord.")
@@ -120,11 +125,15 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
             self.current_tile = None
             if self.is_grid_complete_and_valid(self.agent_grid):
                 self._is_game_over = True
-                self._score = 1.0
-                return
+                reward = 1.0  # Récompense pour avoir complété la grille
+            else:
+                reward = 0.0  # Pas de récompense pour un placement valide
             self.agent_turn = False
             self.opponent_play()
-            return
+
+        next_state = self.state_description()
+        done = self._is_game_over
+        return next_state, reward, done, {}
 
     def draw_tile(self):
         if self.numbers:
