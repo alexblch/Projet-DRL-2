@@ -67,15 +67,21 @@ def choose_game():
         print("Choix invalide. Retour au menu principal.")
         return None, None
 
-def plot_training_rewards(episode_rewards):
-    """Affiche la récompense cumulée par épisode pour visualiser l'entraînement."""
+def plot_training_rewards(episode_rewards, window=10):
+    """Affiche la récompense cumulée par épisode avec une moyenne mobile pour visualiser l'entraînement."""
+    # Calculer la moyenne mobile
+    moving_avg_rewards = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
+
     plt.figure(figsize=(10, 5))
-    plt.plot(episode_rewards, label='Récompense cumulée par épisode')
+    plt.plot(episode_rewards, label='Récompense cumulée par épisode', color='skyblue')
+    plt.plot(range(window - 1, len(episode_rewards)), moving_avg_rewards, label=f'Moyenne mobile ({window} épisodes)', color='blue')
     plt.xlabel('Épisodes')
     plt.ylabel('Récompense cumulée (G)')
     plt.title('Évolution de la récompense cumulée par épisode')
     plt.legend()
+    plt.grid()
     plt.show()
+
 
 def main():
     action, game = choose_game()
@@ -165,6 +171,14 @@ def main():
             # Enregistrement de la récompense cumulée pour l'épisode
             episode_rewards.append(total_reward)
 
+            # Ajout du résultat dans la liste `victory`
+            if total_reward > 0:
+                victory.append(1)  # Victoire
+            elif total_reward < 0:
+                victory.append(-1)  # Défaite
+            else:
+                victory.append(0)  # Match nul
+
             # Affichage des résultats par épisode
             print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {getattr(agent, 'epsilon', 'N/A')}")
 
@@ -178,6 +192,7 @@ def main():
 
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")
+
 
 if __name__ == "__main__":
     main()
