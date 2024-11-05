@@ -81,12 +81,23 @@ def plot_training_rewards(episode_rewards, window=10):
     plt.legend()
     plt.grid()
     plt.show()
+    
+def plot_epsilon(epsilon):
+    plt.figure(figsize=(10, 5))
+    plt.plot(epsilon, label='Epsilon')
+    plt.xlabel('Épisodes')
+    plt.ylabel('Epsilon')
+    plt.title('Évolution de Epsilon')
+    plt.legend()
+    plt.grid()
+    plt.show()
 
 
 def main():
     action, game = choose_game()
     victory = []
     episode_rewards = []
+    epsilon = np.array([])
 
     if action == 'play_classic' and game == 'LuckyNumber':
         print("Lancement du jeu Lucky Number classique contre un agent aléatoire.")
@@ -181,6 +192,9 @@ def main():
 
             # Affichage des résultats par épisode
             print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {getattr(agent, 'epsilon', 'N/A')}")
+            epsilon = np.append(epsilon, getattr(agent, 'epsilon', 0))
+            
+        agent.save()
 
         print("Entraînement terminé.")
         print("Nombre de victoires : ", victory.count(1))
@@ -189,6 +203,7 @@ def main():
 
         # Affichage du graphique des récompenses cumulées
         plot_training_rewards(episode_rewards)
+        plot_epsilon(epsilon)
 
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")

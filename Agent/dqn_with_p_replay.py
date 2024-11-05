@@ -52,6 +52,7 @@ class DQNAgentWithPrioritizedReplay:
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.gamma = gamma
+        self.path = "models/dqn_with_p_replay.h5"
 
         self.epsilon = epsilon_start
         self.epsilon_min = epsilon_end
@@ -155,3 +156,6 @@ class DQNAgentWithPrioritizedReplay:
 
             print(f"Episode {e + 1}/{episodes}, Total Reward: {total_reward}, Epsilon: {self.epsilon}")
             self.replay()
+            
+    def save(self):
+        self.model.save(self.path)

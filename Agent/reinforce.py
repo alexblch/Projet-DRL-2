@@ -9,6 +9,7 @@ class REINFORCEAgent:
         self.action_size = env.action_mask().shape[0]
         self.learning_rate = learning_rate
         self.gamma = gamma
+        self.model_path = "models/reinforce.h5"
 
         # Modèle de politique pour l'agent
         self.model = self.create_model(input_shape=(self.state_size,), action_space=self.action_size, learning_rate=self.learning_rate)
@@ -103,3 +104,6 @@ class REINFORCEAgent:
         # Entraîner l'agent à la fin de chaque épisode
         self.train()
         print(f"Total Reward for Episode: {total_reward}")
+        
+    def save(self, path):
+        self.model.save(path)

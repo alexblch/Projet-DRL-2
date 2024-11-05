@@ -14,6 +14,7 @@ class DQNAgentWithReplay:
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.gamma = gamma
+        self.path = "models/dqn_with_replay.h5"
 
         self.epsilon = epsilon_start
         self.epsilon_min = epsilon_end
@@ -36,12 +37,14 @@ class DQNAgentWithReplay:
 
     def choose_action(self, state):
         if np.random.rand() < self.epsilon:
-            return random.choice(self.env.available_actions_ids())
+            valid_actions = self.env.available_actions_ids()
+            return np.random.choice(valid_actions)
         state = np.expand_dims(state, axis=0)
         q_values = self.model.predict(state, verbose=0)[0]
         mask = self.env.action_mask()
         masked_q_values = np.where(mask == 1, q_values, -np.inf)
         return np.argmax(masked_q_values)
+
 
     def replay(self):
         if len(self.memory) < self.batch_size:
@@ -85,3 +88,6 @@ class DQNAgentWithReplay:
                     break
 
             self.replay()
+            
+    def save(self):
+        self.model.save(self.path)

@@ -11,6 +11,7 @@ class DQNAgent:
         self.action_size = action_size
         self.learning_rate = learning_rate
         self.gamma = gamma
+        self.path = "models/dqn.h5"
 
         self.epsilon = epsilon_start
         self.epsilon_min = epsilon_end
@@ -62,3 +63,7 @@ class DQNAgent:
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+            
+            
+    def save(self):
+        self.model.save(self.path)

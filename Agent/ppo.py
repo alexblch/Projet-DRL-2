@@ -12,6 +12,8 @@ class PPOAgent:
         self.clip_ratio = clip_ratio
         self.update_epochs = update_epochs
         self.lambda_ = lambda_
+        self.policy_model_path = "models/ppo/policy_model.h5"
+        self.value_model_path = "models/ppo/value_model.h5"
 
         # Initialiser les modèles de politique et de critique
         self.policy_model = self.create_policy_model(input_shape=(self.state_size,), action_space=self.action_size)
@@ -140,3 +142,8 @@ class PPOAgent:
         next_value = self.value_model.predict(np.expand_dims(state, axis=0), verbose=0)[0][0]
         self.train(next_value)
         print(f"Total Reward: {total_reward}")
+        
+    def save(self):
+        self.policy_model.save(self.policy_model_path)
+        self.value_model.save(self.value_model_path)
+        
