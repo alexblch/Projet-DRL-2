@@ -2,6 +2,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import tkinter as tk
+from tkinter import ttk, messagebox
 from Environnements.luckynumbergame import LuckyNumbersGame
 from Environnements.luckynumberenv import LuckyNumbersEnv
 from Environnements.grid import GridWorld
@@ -18,56 +19,105 @@ def clear_screen():
     else:
         os.system('clear')
 
-def choose_algorithm(state_size, action_size, env):
-    print("Veuillez choisir l'algorithme de renforcement :")
-    print("1 - DQN")
-    print("2 - DQN avec Experience Replay")
-    print("3 - DQN avec Prioritized Experience Replay")
-    print("4 - PPO")
-    print("5 - REINFORCE")
-    print("6 - Agent aléatoire (Random)")
+def choose_algorithm_gui():
+    algo_choice = []
 
-    choice = input("Entrez votre choix (1 à 6) : ")
+    def on_select():
+        choice = algo_var.get()
+        algo_choice.append(choice)
+        algo_window.destroy()
+
+    algo_window = tk.Tk()
+    algo_window.title("Choix de l'Algorithme")
+
+    tk.Label(algo_window, text="Veuillez choisir l'algorithme de renforcement :").pack(pady=10)
+
+    algo_var = tk.StringVar(value="1")
+
+    algorithms = [
+        ("1 - DQN", "1"),
+        ("2 - DQN avec Experience Replay", "2"),
+        ("3 - DQN avec Prioritized Experience Replay", "3"),
+        ("4 - PPO", "4"),
+        ("5 - REINFORCE", "5"),
+        ("6 - Agent aléatoire (Random)", "6")
+    ]
+
+    for text, value in algorithms:
+        tk.Radiobutton(algo_window, text=text, variable=algo_var, value=value).pack(anchor=tk.W)
+
+    tk.Button(algo_window, text="Valider", command=on_select).pack(pady=10)
+
+    algo_window.mainloop()
+
+    return algo_choice[0]
+
+def choose_algorithm(env):
+    choice = choose_algorithm_gui()
 
     if choice == '1':
-        return DQNAgent(state_size, action_size, env), 'DQN'
+        return DQNAgent(env), 'DQN'
     elif choice == '2':
-        return DQNAgentWithReplay(env), 'DQN avec Experience Replay'  # En passant `env`
+        return DQNAgentWithReplay(env), 'DQN avec Experience Replay'
     elif choice == '3':
-        return DQNAgentWithPrioritizedReplay(env), 'DQN avec Prioritized Experience Replay'  # En passant `env`
+        return DQNAgentWithPrioritizedReplay(env), 'DQN avec Prioritized Experience Replay'
     elif choice == '4':
-        return PPOAgent(env), 'PPO'  # En passant `env`
+        return PPOAgent(env), 'PPO'
     elif choice == '5':
-        return REINFORCEAgent(env), 'REINFORCE'  # En passant `env`
+        return REINFORCEAgent(env), 'REINFORCE'
     elif choice == '6':
         return LuckyNumbersGameRandConsole(), 'Agent aléatoire'
     else:
-        print("Choix invalide. Utilisation de DQN par défaut.")
-        return DQNAgent(state_size, action_size, env), 'DQN'  # En passant `env`
+        messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
+        return DQNAgent(env), 'DQN'
 
+def choose_game_gui():
+    game_choice = []
+
+    def on_select():
+        choice = game_var.get()
+        game_choice.append(choice)
+        game_window.destroy()
+
+    game_window = tk.Tk()
+    game_window.title("Choix du Jeu")
+
+    tk.Label(game_window, text="Veuillez choisir le jeu :").pack(pady=10)
+
+    game_var = tk.StringVar(value="1")
+
+    games = [
+        ("1 - Lucky Number classique contre un agent aléatoire", "1"),
+        ("2 - Lucky Number - Entraîner un agent", "2"),
+        ("3 - GridWorld", "3"),
+        ("4 - Lucky Number IA vs IA (Aléatoire)", "4")
+    ]
+
+    for text, value in games:
+        tk.Radiobutton(game_window, text=text, variable=game_var, value=value).pack(anchor=tk.W)
+
+    tk.Button(game_window, text="Valider", command=on_select).pack(pady=10)
+
+    game_window.mainloop()
+
+    return game_choice[0]
 
 def choose_game():
-    print("Veuillez choisir le jeu :")
-    print("1 - Lucky Number classique contre un agent aléatoire")
-    print("2 - Lucky Number - Entraîner un agent")
-    print("3 - GridWorld")
-    print("4 - Lucky Number IA vs IA (Aléatoire)")
+    choice = choose_game_gui()
 
-    game_choice = input("Entrez votre choix (1 à 4) : ")
-
-    if game_choice == '1':
+    if choice == '1':
         return 'play_classic', 'LuckyNumber'
-    elif game_choice == '2':
+    elif choice == '2':
         return 'train', 'LuckyNumber'
-    elif game_choice == '3':
+    elif choice == '3':
         return 'train', 'GridWorld'
-    elif game_choice == '4':
+    elif choice == '4':
         return 'random_vs_random', 'LuckyNumber'
     else:
-        print("Choix invalide. Retour au menu principal.")
+        messagebox.showwarning("Choix invalide", "Choix invalide. Retour au menu principal.")
         return None, None
 
-def plot_training_rewards(episode_rewards, window=10):
+def plot_training_rewards(episode_rewards, name, window=10):
     """Affiche la récompense cumulée par épisode avec une moyenne mobile pour visualiser l'entraînement."""
     # Calculer la moyenne mobile
     moving_avg_rewards = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
@@ -81,8 +131,8 @@ def plot_training_rewards(episode_rewards, window=10):
     plt.legend()
     plt.grid()
     plt.show()
-    
-def plot_epsilon(epsilon):
+
+def plot_epsilon(epsilon, name):
     plt.figure(figsize=(10, 5))
     plt.plot(epsilon, label='Epsilon')
     plt.xlabel('Épisodes')
@@ -92,6 +142,51 @@ def plot_epsilon(epsilon):
     plt.grid()
     plt.show()
 
+def get_number_of_episodes():
+    episodes = []
+
+    def on_submit():
+        try:
+            n = int(entry.get())
+            episodes.append(n)
+            episodes_window.destroy()
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer un nombre entier.")
+
+    episodes_window = tk.Tk()
+    episodes_window.title("Nombre d'Épisodes")
+
+    tk.Label(episodes_window, text="Entrez le nombre d'épisodes pour l'entraînement (par ex. 1000) :").pack(pady=10)
+    entry = tk.Entry(episodes_window)
+    entry.pack()
+    tk.Button(episodes_window, text="Valider", command=on_submit).pack(pady=10)
+
+    episodes_window.mainloop()
+
+    return episodes[0] if episodes else 1000  # Valeur par défaut
+
+def get_number_of_games():
+    games = []
+
+    def on_submit():
+        try:
+            n = int(entry.get())
+            games.append(n)
+            games_window.destroy()
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer un nombre entier.")
+
+    games_window = tk.Tk()
+    games_window.title("Nombre de Parties")
+
+    tk.Label(games_window, text="Entrez le nombre de parties à jouer :").pack(pady=10)
+    entry = tk.Entry(games_window)
+    entry.pack()
+    tk.Button(games_window, text="Valider", command=on_submit).pack(pady=10)
+
+    games_window.mainloop()
+
+    return games[0] if games else 1  # Valeur par défaut
 
 def main():
     action, game = choose_game()
@@ -107,7 +202,7 @@ def main():
 
     elif action == 'random_vs_random' and game == 'LuckyNumber':
         print("Lancement du mode Lucky Number IA vs IA (Aléatoire)")
-        n = int(input("Entrez le nombre de parties à jouer : "))
+        n = get_number_of_games()
         play_n_games(n)
 
     elif action == 'train':
@@ -121,10 +216,8 @@ def main():
             print("Option non reconnue ou fonctionnalité non implémentée.")
             return
 
-        state_size = env.state_description().shape[0]
-        action_size = env.action_mask().shape[0]
-        agent, algo = choose_algorithm(state_size, action_size, env)
-        EPISODES = int(input("Entrez le nombre d'épisodes pour l'entraînement (par ex. 1000) : "))
+        agent, algo = choose_algorithm(env)
+        EPISODES = get_number_of_episodes()
 
         if not os.path.exists(f'models/saved_models'):
             os.makedirs(f'models/saved_models')
@@ -153,30 +246,39 @@ def main():
                     print(f"Action invalide ou erreur d'état: {e}")
                     done = True
                     reward = -1
-                    if algo == 'PPO':
-                        agent.store_transition(state, action, reward, done, log_prob, value)
-                    else:
+                    next_state = state  # Garder le même état
+                    # Apprentissage immédiat en cas d'erreur
+                    if hasattr(agent, 'learn'):
+                        agent.learn(state, action, reward, next_state, done)
+                    elif hasattr(agent, 'remember'):
                         agent.remember(state, action, reward, next_state, done)
-                    break
+                    break  # Sortir de la boucle while
 
-                # Stockage des transitions pour PPO ou REINFORCE
+                # Stockage des transitions ou apprentissage immédiat
                 if algo == 'PPO':
                     agent.store_transition(state, action, reward, done, log_prob, value)
                 elif algo == 'REINFORCE':
                     agent.store_transition(state, action, reward)
-                else:
+                elif hasattr(agent, 'remember'):
+                    # Agents avec expérience replay
                     agent.remember(state, action, reward, next_state, done)
+                elif hasattr(agent, 'learn'):
+                    # Agents sans expérience replay
+                    agent.learn(state, action, reward, next_state, done)
+                else:
+                    # Autres agents
+                    pass
 
                 state = next_state
                 total_reward += reward
 
-            # Entraînement après chaque épisode
+            # Entraînement après chaque épisode pour certains agents
             if algo == 'PPO':
                 next_value = agent.value_model.predict(np.expand_dims(state, axis=0), verbose=0)[0][0]
                 agent.train(next_value)
             elif algo == 'REINFORCE':
                 agent.train()
-            else:
+            elif hasattr(agent, 'replay'):
                 agent.replay()
 
             # Enregistrement de la récompense cumulée pour l'épisode
@@ -193,21 +295,20 @@ def main():
             # Affichage des résultats par épisode
             print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {getattr(agent, 'epsilon', 'N/A')}")
             epsilon = np.append(epsilon, getattr(agent, 'epsilon', 0))
-            
+
         agent.save()
 
         print("Entraînement terminé.")
         print("Nombre de victoires : ", victory.count(1))
         print("Nombre de défaites : ", victory.count(-1))
-        print("Nombre de matchs nuls : ", victory.count(0))
+        print("Nombre de matchs nuls ou d'interruptions de partie : ", victory.count(0))
 
         # Affichage du graphique des récompenses cumulées
-        plot_training_rewards(episode_rewards)
-        plot_epsilon(epsilon)
+        plot_training_rewards(episode_rewards, algo)
+        plot_epsilon(epsilon, algo)
 
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")
-
 
 if __name__ == "__main__":
     main()

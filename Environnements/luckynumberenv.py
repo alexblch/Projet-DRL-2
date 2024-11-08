@@ -1,5 +1,6 @@
 import numpy as np
 import random
+from numba import njit
 
 class DeepDiscreteActionsEnv:
     def reset(self):
@@ -43,17 +44,18 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         self.reset()
 
     def reset(self):
-        self.numbers = [num for num in range(1, self.num_numbers + 1)] * 2
-        random.shuffle(self.numbers)
-        self.agent_grid = [[None for _ in range(self.size)] for _ in range(self.size)]
-        self.opponent_grid = [[None for _ in range(self.size)] for _ in range(self.size)]
+        self.numbers = np.array([num for num in range(1, self.num_numbers + 1)] * 2)
+        np.random.shuffle(self.numbers)
+        self.numbers = self.numbers.tolist()  # Convertir en liste pour pop()
+        self.agent_grid = np.full((self.size, self.size), -1, dtype=np.int32)
+        self.opponent_grid = np.full((self.size, self.size), -1, dtype=np.int32)
         self.place_initial_tiles(self.agent_grid)
         self.place_initial_tiles(self.opponent_grid)
         self.shared_cache = []
         self._is_game_over = False
         self._score = 0.0
         self.agent_turn = True
-        self.current_tile = None
+        self.current_tile = -1
         return self.state_description()
 
     def place_initial_tiles(self, grid):
@@ -61,49 +63,53 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         initial_numbers = sorted([self.numbers.pop() for _ in range(self.size)])
         for pos, num in zip(diagonal_positions, initial_numbers):
             row, col = pos
-            grid[row][col] = num
+            grid[row, col] = num
 
     def state_description(self) -> np.ndarray:
-        agent_grid_flat = [cell if cell is not None else 0 for row in self.agent_grid for cell in row]
-        opponent_grid_flat = [cell if cell is not None else 0 for row in self.opponent_grid for cell in row]
-        # Encodage du cache partagé en un histogramme de taille fixe
+        # Encodage de la grille de l'agent
+        agent_grid_flat = self.agent_grid.flatten()
+        # Encodage de la grille de l'adversaire
+        opponent_grid_flat = self.opponent_grid.flatten()
+        # Encodage du cache partagé
         cache_encoding = np.zeros(self.num_numbers + 1, dtype=np.int32)  # +1 pour l'indice 0 non utilisé
         for tile in self.shared_cache:
-            cache_encoding[tile] += 1  # Compte le nombre de chaque tuile dans le cache
-        current_tile_value = [self.current_tile if self.current_tile is not None else 0]
-        state = np.array(agent_grid_flat + opponent_grid_flat + list(cache_encoding[1:]) + current_tile_value, dtype=np.float32)
+            cache_encoding[tile] += 1
+        # Tuile courante
+        current_tile_value = np.array([self.current_tile], dtype=np.int32)
+        # Construction de l'état
+        state = np.concatenate((agent_grid_flat, opponent_grid_flat, cache_encoding[1:], current_tile_value)).astype(np.float32)
         return state
 
     def available_actions_ids(self) -> np.ndarray:
         actions = []
-        if self.current_tile is None:
+        if self.current_tile == -1:
             actions.append(self.ACTION_DRAW_FROM_DECK)
             # Actions pour prendre des tuiles spécifiques du cache
-            for tile in set(self.shared_cache):
+            unique_tiles = np.unique(self.shared_cache)
+            for tile in unique_tiles:
                 action_id = self.ACTION_TAKE_FROM_CACHE_START + tile - 1
                 actions.append(action_id)
         else:
             actions.append(self.ACTION_ADD_TO_CACHE)
             valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile)
-            for pos in valid_positions:
-                i, j = pos
-                action_id = self.ACTION_PLACE_TILE_START + i * self.size + j
+            for idx in valid_positions:
+                action_id = self.ACTION_PLACE_TILE_START + idx
                 actions.append(action_id)
         return np.array(actions, dtype=np.int32)
 
     def action_mask(self) -> np.ndarray:
         mask = np.zeros((self.TOTAL_ACTIONS,), dtype=np.float32)
-        if self.current_tile is None:
+        if self.current_tile == -1:
             mask[self.ACTION_DRAW_FROM_DECK] = 1.0
-            for tile in set(self.shared_cache):
+            unique_tiles = np.unique(self.shared_cache)
+            for tile in unique_tiles:
                 action_id = self.ACTION_TAKE_FROM_CACHE_START + tile - 1
                 mask[action_id] = 1.0
         else:
             mask[self.ACTION_ADD_TO_CACHE] = 1.0
             valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile)
-            for pos in valid_positions:
-                i, j = pos
-                action_id = self.ACTION_PLACE_TILE_START + i * self.size + j
+            for idx in valid_positions:
+                action_id = self.ACTION_PLACE_TILE_START + idx
                 mask[action_id] = 1.0
         return mask
 
@@ -117,9 +123,14 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
 
         reward = 0.0
 
-        if self.current_tile is None:
+        if self.current_tile == -1:
             if action == self.ACTION_DRAW_FROM_DECK:
                 self.current_tile = self.draw_tile_from_deck()
+                if self.current_tile == -1:
+                    # Plus de tuiles à piocher, fin du jeu
+                    self._is_game_over = True
+                    self._score = self.calculate_score()
+                    reward = self._score
             elif self.ACTION_TAKE_FROM_CACHE_START <= action <= self.ACTION_TAKE_FROM_CACHE_END:
                 tile_value = action - self.ACTION_TAKE_FROM_CACHE_START + 1
                 if tile_value in self.shared_cache:
@@ -133,7 +144,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         else:
             if action == self.ACTION_ADD_TO_CACHE:
                 self.shared_cache.append(self.current_tile)
-                self.current_tile = None
+                self.current_tile = -1
                 self.agent_turn = False
                 self.opponent_play()
                 reward = 0.0  # Pas de récompense pour ajouter au cache
@@ -141,13 +152,13 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 action_index = action - self.ACTION_PLACE_TILE_START
                 i = action_index // self.size
                 j = action_index % self.size
-                if not self.is_valid_placement_with_replacement(self.agent_grid, i, j, self.current_tile):
+                if not is_valid_placement_with_replacement_numba(self.agent_grid, i, j, self.current_tile):
                     raise ValueError("Action invalide.")
-                if self.agent_grid[i][j] is not None:
-                    self.shared_cache.append(self.agent_grid[i][j])
-                self.agent_grid[i][j] = self.current_tile
-                self.current_tile = None
-                if self.is_grid_complete_and_valid(self.agent_grid):
+                if self.agent_grid[i, j] != -1:
+                    self.shared_cache.append(self.agent_grid[i, j])
+                self.agent_grid[i, j] = self.current_tile
+                self.current_tile = -1
+                if is_grid_complete_and_valid_numba(self.agent_grid):
                     self._is_game_over = True
                     reward = 1.0  # Récompense pour avoir complété la grille
                 else:
@@ -165,11 +176,11 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         if self.numbers:
             return self.numbers.pop()
         else:
-            return None
+            return -1
 
     def opponent_play(self):
         while not self.agent_turn and not self._is_game_over:
-            if self.current_tile is None:
+            if self.current_tile == -1:
                 # Décider aléatoirement de prendre du deck ou du cache
                 choices = []
                 if self.numbers:
@@ -183,6 +194,11 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 choice = random.choice(choices)
                 if choice == 'deck':
                     self.current_tile = self.draw_tile_from_deck()
+                    if self.current_tile == -1:
+                        # Plus de tuiles à piocher, fin du jeu
+                        self._is_game_over = True
+                        self._score = self.calculate_score()
+                        return
                 else:
                     self.current_tile = random.choice(self.shared_cache)
                     self.shared_cache.remove(self.current_tile)
@@ -195,15 +211,17 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 action = random.choice(actions)
                 if action == 'cache':
                     self.shared_cache.append(self.current_tile)
-                    self.current_tile = None
+                    self.current_tile = -1
                     self.agent_turn = True
                 else:
-                    i, j = random.choice(valid_positions)
-                    if self.opponent_grid[i][j] is not None:
-                        self.shared_cache.append(self.opponent_grid[i][j])
-                    self.opponent_grid[i][j] = self.current_tile
-                    self.current_tile = None
-                    if self.is_grid_complete_and_valid(self.opponent_grid):
+                    idx = random.choice(valid_positions)
+                    i = idx // self.size
+                    j = idx % self.size
+                    if self.opponent_grid[i, j] != -1:
+                        self.shared_cache.append(self.opponent_grid[i, j])
+                    self.opponent_grid[i, j] = self.current_tile
+                    self.current_tile = -1
+                    if is_grid_complete_and_valid_numba(self.opponent_grid):
                         self._is_game_over = True
                         self._score = -1.0
                         return
@@ -218,65 +236,25 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
     def __str__(self):
         grid_str = "Grille de l'Agent:\n"
         for row in self.agent_grid:
-            grid_str += ' '.join(['_' if cell is None else str(cell) for cell in row]) + '\n'
+            grid_str += ' '.join(['_' if cell == -1 else str(cell) for cell in row]) + '\n'
         grid_str += "\nGrille de l'Adversaire:\n"
         for row in self.opponent_grid:
-            grid_str += ' '.join(['_' if cell is None else str(cell) for cell in row]) + '\n'
+            grid_str += ' '.join(['_' if cell == -1 else str(cell) for cell in row]) + '\n'
         grid_str += f"\nCache Partagé: {self.shared_cache}\n"
-        grid_str += f"Tuile Courante: {self.current_tile}\n"
+        grid_str += f"Tuile Courante: {self.current_tile if self.current_tile != -1 else 'Aucune'}\n"
         grid_str += f"Score: {self._score}\n"
         grid_str += f"Partie Terminée: {self._is_game_over}\n"
         return grid_str
 
-    def is_valid_placement(self, grid, row, col, number):
-        for j in range(self.size):
-            num = grid[row][j]
-            if num is not None:
-                if j < col and num > number:
-                    return False
-                if j > col and num < number:
-                    return False
-        for i in range(self.size):
-            num = grid[i][col]
-            if num is not None:
-                if i < row and num > number:
-                    return False
-                if i > row and num < number:
-                    return False
-        return True
-
-    def is_valid_placement_with_replacement(self, grid, row, col, number):
-        original_value = grid[row][col]
-        grid[row][col] = number
-        valid = self.is_valid_placement(grid, row, col, number)
-        grid[row][col] = original_value
-        return valid
-
     def get_valid_positions(self, grid, number):
-        valid_positions = []
-        for i in range(self.size):
-            for j in range(self.size):
-                if grid[i][j] is None:
-                    if self.is_valid_placement(grid, i, j, number):
-                        valid_positions.append((i, j))
-                else:
-                    if self.is_valid_placement_with_replacement(grid, i, j, number):
-                        valid_positions.append((i, j))
+        # Appel à la fonction Numba pour obtenir les positions valides
+        valid_positions = get_valid_positions_numba(grid, number)
         return valid_positions
-
-    def is_grid_complete_and_valid(self, grid):
-        for i in range(self.size):
-            for j in range(self.size):
-                if grid[i][j] is None:
-                    return False
-                if not self.is_valid_placement(grid, i, j, grid[i][j]):
-                    return False
-        return True
 
     def calculate_score(self):
         # Calcul du score en fonction de la somme des tuiles
-        agent_score = sum(cell for row in self.agent_grid for cell in row if cell is not None)
-        opponent_score = sum(cell for row in self.opponent_grid for cell in row if cell is not None)
+        agent_score = np.sum(self.agent_grid[self.agent_grid != -1])
+        opponent_score = np.sum(self.opponent_grid[self.opponent_grid != -1])
         if agent_score < opponent_score:
             return 1.0  # L'agent a gagné
         elif agent_score > opponent_score:
@@ -286,12 +264,70 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
 
     def get_state(self):
         return {
-            'agent_grid': self.agent_grid,
-            'opponent_grid': self.opponent_grid,
-            'shared_cache': self.shared_cache,
+            'agent_grid': self.agent_grid.copy(),
+            'opponent_grid': self.opponent_grid.copy(),
+            'shared_cache': self.shared_cache.copy(),
             'numbers_remaining': len(self.numbers),
             'current_tile': self.current_tile,
             'agent_turn': self.agent_turn,
             'is_game_over': self._is_game_over,
             'score': self._score
         }
+
+# Fonctions Numba
+@njit
+def is_valid_placement_numba(grid, row, col, number):
+    size = grid.shape[0]
+    # Vérification sur la ligne
+    for j in range(size):
+        num = grid[row, j]
+        if num != -1:
+            if j < col and num > number:
+                return False
+            if j > col and num < number:
+                return False
+    # Vérification sur la colonne
+    for i in range(size):
+        num = grid[i, col]
+        if num != -1:
+            if i < row and num > number:
+                return False
+            if i > row and num < number:
+                return False
+    return True
+
+@njit
+def is_valid_placement_with_replacement_numba(grid, row, col, number):
+    original_value = grid[row, col]
+    grid[row, col] = number
+    valid = is_valid_placement_numba(grid, row, col, number)
+    grid[row, col] = original_value
+    return valid
+
+@njit
+def get_valid_positions_numba(grid, number):
+    size = grid.shape[0]
+    valid_positions = []
+    for i in range(size):
+        for j in range(size):
+            if grid[i, j] == -1:
+                if is_valid_placement_numba(grid, i, j, number):
+                    idx = i * size + j
+                    valid_positions.append(idx)
+            else:
+                if is_valid_placement_with_replacement_numba(grid, i, j, number):
+                    idx = i * size + j
+                    valid_positions.append(idx)
+    return valid_positions
+
+@njit
+def is_grid_complete_and_valid_numba(grid):
+    size = grid.shape[0]
+    for i in range(size):
+        for j in range(size):
+            number = grid[i, j]
+            if number == -1:
+                return False
+            if not is_valid_placement_numba(grid, i, j, number):
+                return False
+    return True

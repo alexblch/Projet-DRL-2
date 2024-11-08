@@ -9,7 +9,7 @@ class DQNAgentWithReplay:
                  epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
         self.env = env
         self.state_size = env.state_description().shape[0]
-        self.action_size = env.action_mask().shape[0]
+        self.action_size = env.TOTAL_ACTIONS  # Utiliser la constante de l'environnement
         self.memory = deque(maxlen=memory_size)
         self.batch_size = batch_size
         self.learning_rate = learning_rate
@@ -36,58 +36,38 @@ class DQNAgentWithReplay:
         self.memory.append((state, action, reward, next_state, done))
 
     def choose_action(self, state):
+        action_mask = self.env.action_mask()
         if np.random.rand() < self.epsilon:
-            valid_actions = self.env.available_actions_ids()
+            valid_actions = np.where(action_mask == 1)[0]
             return np.random.choice(valid_actions)
         state = np.expand_dims(state, axis=0)
         q_values = self.model.predict(state, verbose=0)[0]
-        mask = self.env.action_mask()
-        masked_q_values = np.where(mask == 1, q_values, -np.inf)
+        # Appliquer le masque d'actions
+        masked_q_values = np.full_like(q_values, -np.inf)
+        masked_q_values[action_mask == 1] = q_values[action_mask == 1]
         return np.argmax(masked_q_values)
-
 
     def replay(self):
         if len(self.memory) < self.batch_size:
             return
 
         minibatch = random.sample(self.memory, self.batch_size)
-        for state, action, reward, next_state, done in minibatch:
+        states = np.array([sample[0] for sample in minibatch])
+        targets = np.zeros((self.batch_size, self.action_size))
+
+        for i, (state, action, reward, next_state, done) in enumerate(minibatch):
             state = np.expand_dims(state, axis=0)
             next_state = np.expand_dims(next_state, axis=0)
-
             q_values = self.model.predict(state, verbose=0)
             q_values_next = self.model.predict(next_state, verbose=0)
-            
-            if q_values.shape[1] != self.action_size:
-                raise ValueError("La sortie du modèle ne correspond pas à action_size.")
-
             target = reward if done else reward + self.gamma * np.max(q_values_next[0])
             q_values[0][action] = target
+            targets[i] = q_values[0]
 
-            self.model.fit(state, q_values, epochs=1, verbose=0)
+        self.model.fit(states, targets, epochs=1, verbose=0)
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
-    def train(self, episodes):
-        for e in range(episodes):
-            state = self.env.reset()
-            total_reward = 0
-            done = False
-
-            while not done:
-                action = self.choose_action(state)
-                next_state, reward, done, _ = self.env.step(action)
-                
-                self.remember(state, action, reward, next_state, done)
-                state = next_state
-                total_reward += reward
-
-                if done:
-                    print(f"Episode {e + 1}/{episodes}, Score: {total_reward}, Epsilon: {self.epsilon:.2}")
-                    break
-
-            self.replay()
-            
     def save(self):
         self.model.save(self.path)
