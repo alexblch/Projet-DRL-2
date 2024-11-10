@@ -10,7 +10,7 @@ from Environnements.luckynumberrand import LuckyNumbersGameRandConsole, play_n_g
 from Agent.dqn import DQNAgent
 from Agent.dqn_with_replay import DQNAgentWithReplay
 from Agent.dqn_with_p_replay import DQNAgentWithPrioritizedReplay
-from Agent.ppo import PPOAgent
+from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
 
 def clear_screen():
@@ -133,6 +133,9 @@ def plot_training_rewards(episode_rewards, name, window=10):
     plt.show()
 
 def plot_epsilon(epsilon, name):
+    if len(epsilon) == 0:
+        print("No epsilon values to plot.")
+        return
     plt.figure(figsize=(10, 5))
     plt.plot(epsilon, label='Epsilon')
     plt.xlabel('Épisodes')
@@ -188,11 +191,25 @@ def get_number_of_games():
 
     return games[0] if games else 1  # Valeur par défaut
 
+
+def plot_losses(losses, name):
+    """Plot the loss values over episodes for PPO."""
+    plt.figure(figsize=(10, 5))
+    plt.plot(losses, label='Loss per Episode', color='red')
+    plt.xlabel('Episodes')
+    plt.ylabel('Loss')
+    plt.title(f'Loss over Episodes for {name}')
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+
 def main():
     action, game = choose_game()
     victory = []
     episode_rewards = []
     epsilon = np.array([])
+    losses = []
 
     if action == 'play_classic' and game == 'LuckyNumber':
         print("Lancement du jeu Lucky Number classique contre un agent aléatoire.")
@@ -217,6 +234,7 @@ def main():
             return
 
         agent, algo = choose_algorithm(env)
+        print(f"Entraînement de l'agent avec l'algorithme {algo}.")
         EPISODES = get_number_of_episodes()
 
         if not os.path.exists(f'models/saved_models'):
@@ -230,13 +248,8 @@ def main():
             total_reward = 0
 
             while not done:
-                if algo == 'PPO':
-                    # `choose_action` de PPO retourne action, log_prob, et value
-                    action, log_prob, value = agent.choose_action(state)
-                    agent.store_transition(state, action, total_reward, done, log_prob, value)
-                else:
-                    # Les autres agents retournent uniquement `action`
-                    action = agent.choose_action(state)
+                action_mask = env.action_mask()
+                action = agent.choose_action(state)
 
                 try:
                     next_state, reward, done, _ = env.step(action)
@@ -246,55 +259,32 @@ def main():
                     print(f"Action invalide ou erreur d'état: {e}")
                     done = True
                     reward = -1
-                    next_state = state  # Garder le même état
-                    # Apprentissage immédiat en cas d'erreur
-                    if hasattr(agent, 'learn'):
-                        agent.learn(state, action, reward, next_state, done)
-                    elif hasattr(agent, 'remember'):
-                        agent.remember(state, action, reward, next_state, done)
-                    break  # Sortir de la boucle while
-
-                # Stockage des transitions ou apprentissage immédiat
-                if algo == 'PPO':
-                    agent.store_transition(state, action, reward, done, log_prob, value)
-                elif algo == 'REINFORCE':
-                    agent.store_transition(state, action, reward)
-                elif hasattr(agent, 'remember'):
-                    # Agents avec expérience replay
+                    next_state = state
                     agent.remember(state, action, reward, next_state, done)
-                elif hasattr(agent, 'learn'):
-                    # Agents sans expérience replay
-                    agent.learn(state, action, reward, next_state, done)
-                else:
-                    # Autres agents
-                    pass
+                    break
+
+                agent.remember(state, action, reward, next_state, done)
 
                 state = next_state
                 total_reward += reward
 
-            # Entraînement après chaque épisode pour certains agents
-            if algo == 'PPO':
-                next_value = agent.value_model.predict(np.expand_dims(state, axis=0), verbose=0)[0][0]
-                agent.train(next_value)
-            elif algo == 'REINFORCE':
-                agent.train()
-            elif hasattr(agent, 'replay'):
-                agent.replay()
+            # Training after each episode
+            agent.replay()
 
-            # Enregistrement de la récompense cumulée pour l'épisode
+            # Record cumulative reward for the episode
             episode_rewards.append(total_reward)
+            epsilon = np.append(epsilon, agent.epsilon)
 
-            # Ajout du résultat dans la liste `victory`
+            # Add the result to the `victory` list
             if total_reward > 0:
-                victory.append(1)  # Victoire
+                victory.append(1)  # Victory
             elif total_reward < 0:
-                victory.append(-1)  # Défaite
+                victory.append(-1)  # Defeat
             else:
-                victory.append(0)  # Match nul
+                victory.append(0)  # Draw or game interruption
 
-            # Affichage des résultats par épisode
-            print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {getattr(agent, 'epsilon', 'N/A')}")
-            epsilon = np.append(epsilon, getattr(agent, 'epsilon', 0))
+            # Display results per episode
+            print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {agent.epsilon}")
 
         agent.save()
 
@@ -303,8 +293,9 @@ def main():
         print("Nombre de défaites : ", victory.count(-1))
         print("Nombre de matchs nuls ou d'interruptions de partie : ", victory.count(0))
 
-        # Affichage du graphique des récompenses cumulées
+        # Display the cumulative reward graph
         plot_training_rewards(episode_rewards, algo)
+        # Plot epsilon decay
         plot_epsilon(epsilon, algo)
 
     else:
