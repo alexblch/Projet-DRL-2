@@ -3,15 +3,16 @@ import os
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk, messagebox
-from Environnements.luckynumbergame import LuckyNumbersGame
 from Environnements.luckynumberenv import LuckyNumbersEnv
-from Environnements.grid import GridWorld
 from Environnements.luckynumberrand import LuckyNumbersGameRandConsole, play_n_games
+from Environnements.grid import GridWorld
+from Environnements.luckynumbergame import LuckyNumbersGame
 from Agent.dqn import DQNAgent
 from Agent.dqn_with_replay import DQNAgentWithReplay
 from Agent.dqn_with_p_replay import DQNAgentWithPrioritizedReplay
 from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
+from Agent.mcts import MCTS
 
 def clear_screen():
     if os.name == 'nt':
@@ -27,8 +28,12 @@ def choose_algorithm_gui():
         algo_choice.append(choice)
         algo_window.destroy()
 
+    def on_close():
+        algo_window.destroy()
+
     algo_window = tk.Tk()
     algo_window.title("Choix de l'Algorithme")
+    algo_window.protocol("WM_DELETE_WINDOW", on_close)  # Gestion de la fermeture de la fenêtre
 
     tk.Label(algo_window, text="Veuillez choisir l'algorithme de renforcement :").pack(pady=10)
 
@@ -40,7 +45,8 @@ def choose_algorithm_gui():
         ("3 - DQN avec Prioritized Experience Replay", "3"),
         ("4 - PPO", "4"),
         ("5 - REINFORCE", "5"),
-        ("6 - Agent aléatoire (Random)", "6")
+        ("6 - Agent aléatoire (Random)", "6"),
+        ("7 - MCTS", "7")  # Ajout de MCTS
     ]
 
     for text, value in algorithms:
@@ -50,7 +56,8 @@ def choose_algorithm_gui():
 
     algo_window.mainloop()
 
-    return algo_choice[0]
+    return algo_choice[0] if algo_choice else None
+
 
 def choose_algorithm(env):
     choice = choose_algorithm_gui()
@@ -67,6 +74,8 @@ def choose_algorithm(env):
         return REINFORCEAgent(env), 'REINFORCE'
     elif choice == '6':
         return LuckyNumbersGameRandConsole(), 'Agent aléatoire'
+    elif choice == '7':
+        return MCTS(n_iterations=1000), 'MCTS'  # Retourne une instance de MCTS
     else:
         messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
         return DQNAgent(env), 'DQN'
@@ -127,7 +136,7 @@ def plot_training_rewards(episode_rewards, name, window=10):
     plt.plot(range(window - 1, len(episode_rewards)), moving_avg_rewards, label=f'Moyenne mobile ({window} épisodes)', color='blue')
     plt.xlabel('Épisodes')
     plt.ylabel('Récompense cumulée (G)')
-    plt.title('Évolution de la récompense cumulée par épisode')
+    plt.title(f'Évolution de la récompense cumulée par épisode - {name}')
     plt.legend()
     plt.grid()
     plt.show()
@@ -140,7 +149,7 @@ def plot_epsilon(epsilon, name):
     plt.plot(epsilon, label='Epsilon')
     plt.xlabel('Épisodes')
     plt.ylabel('Epsilon')
-    plt.title('Évolution de Epsilon')
+    plt.title(f'Évolution de Epsilon - {name}')
     plt.legend()
     plt.grid()
     plt.show()
@@ -191,7 +200,6 @@ def get_number_of_games():
 
     return games[0] if games else 1  # Valeur par défaut
 
-
 def plot_losses(losses, name):
     """Plot the loss values over episodes for PPO."""
     plt.figure(figsize=(10, 5))
@@ -203,13 +211,16 @@ def plot_losses(losses, name):
     plt.grid()
     plt.show()
 
-
 def main():
     action, game = choose_game()
     victory = []
     episode_rewards = []
     epsilon = np.array([])
     losses = []
+
+    if action is None or game is None:
+        print("Aucune action ou jeu valide sélectionné. Fin du programme.")
+        return
 
     if action == 'play_classic' and game == 'LuckyNumber':
         print("Lancement du jeu Lucky Number classique contre un agent aléatoire.")
@@ -234,11 +245,15 @@ def main():
             return
 
         agent, algo = choose_algorithm(env)
+        if agent is None:
+            print("Aucun algorithme sélectionné. Fin du programme.")
+            return
+
         print(f"Entraînement de l'agent avec l'algorithme {algo}.")
         EPISODES = get_number_of_episodes()
 
-        if not os.path.exists(f'models/saved_models'):
-            os.makedirs(f'models/saved_models')
+        if not os.path.exists('models/saved_models'):
+            os.makedirs('models/saved_models')
 
         for e in range(EPISODES):
             state = env.reset()
@@ -248,58 +263,79 @@ def main():
             total_reward = 0
 
             while not done:
-                action_mask = env.action_mask()
-                action = agent.choose_action(state)
+                if algo == 'MCTS':
+                    action = agent.choose_action(env)
+                else:
+                    action_mask = env.action_mask()
+                    action = agent.choose_action(state)
 
                 try:
                     next_state, reward, done, _ = env.step(action)
                     if next_state is None:
                         raise ValueError("L'état suivant est None. Vérifiez la méthode step de l'environnement.")
-                except ValueError as e:
-                    print(f"Action invalide ou erreur d'état: {e}")
+                except ValueError as ex:
+                    print(f"Action invalide ou erreur d'état: {ex}")
                     done = True
-                    reward = -1
+                    reward = 0.0  # Récompense neutre pour action invalide
                     next_state = state
-                    agent.remember(state, action, reward, next_state, done)
+                    if algo != 'MCTS' and hasattr(agent, 'remember'):
+                        agent.remember(state, action, reward, next_state, done)
                     break
 
-                agent.remember(state, action, reward, next_state, done)
+                if algo != 'MCTS' and hasattr(agent, 'remember'):
+                    agent.remember(state, action, reward, next_state, done)
+                    # Entraînement après chaque étape
+                    agent.replay()
 
                 state = next_state
                 total_reward += reward
 
-            # Training after each episode
-            agent.replay()
+                # Vérifier si la partie est terminée après le tour de l'adversaire
+                if env.is_game_over():
+                    done = True
+                    # Si la partie s'est terminée pendant le tour de l'adversaire, ajouter la récompense finale
+                    if reward == 0.0:
+                        final_reward = env.score()
+                        total_reward += final_reward
+                        reward = final_reward  # Mettre à jour la récompense avec la récompense finale
+                    # Afficher l'état final de l'environnement
+                    print(env)
+                    break
 
-            # Record cumulative reward for the episode
+            # Enregistrement du modèle si nécessaire
+            if algo != 'MCTS' and hasattr(agent, 'save'):
+                agent.save()
+
+            # Enregistrer la récompense totale de l'épisode
             episode_rewards.append(total_reward)
-            epsilon = np.append(epsilon, agent.epsilon)
+            if hasattr(agent, 'epsilon'):
+                epsilon = np.append(epsilon, agent.epsilon)
 
-            # Add the result to the `victory` list
+            # Ajouter le résultat à la liste `victory`
             if total_reward > 0:
-                victory.append(1)  # Victory
+                victory.append(1)  # Victoire
             elif total_reward < 0:
-                victory.append(-1)  # Defeat
+                victory.append(-1)  # Défaite
             else:
-                victory.append(0)  # Draw or game interruption
+                victory.append(0)  # Match nul ou interruption
 
-            # Display results per episode
-            print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}, Epsilon: {agent.epsilon}")
-
-        agent.save()
+            # Affichage des résultats par épisode
+            print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}")
 
         print("Entraînement terminé.")
         print("Nombre de victoires : ", victory.count(1))
         print("Nombre de défaites : ", victory.count(-1))
         print("Nombre de matchs nuls ou d'interruptions de partie : ", victory.count(0))
 
-        # Display the cumulative reward graph
+        # Affichage du graphique des récompenses cumulées
         plot_training_rewards(episode_rewards, algo)
-        # Plot epsilon decay
-        plot_epsilon(epsilon, algo)
+        # Affichage de l'évolution de epsilon si applicable
+        if epsilon.size > 0:
+            plot_epsilon(epsilon, algo)
 
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")
 
 if __name__ == "__main__":
     main()
+

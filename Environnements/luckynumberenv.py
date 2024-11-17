@@ -1,3 +1,5 @@
+# luckynumberenv.py
+
 import numpy as np
 import random
 from numba import njit
@@ -30,10 +32,9 @@ class DeepDiscreteActionsEnv:
 class LuckyNumbersEnv(DeepDiscreteActionsEnv):
     def __init__(self, size=4):
         self.size = size
-        self.total_tiles = self.size * self.size
-        self.num_numbers = 20
+        self.num_numbers = 20  # Nombres de 1 à 20
+        self.total_tiles = self.num_numbers * 2  # Chaque nombre apparaît deux fois
         # Définition des constantes pour les actions
-        self.MAX_CACHE_SIZE = 2 * self.num_numbers  # Taille maximale du cache
         self.ACTION_DRAW_FROM_DECK = 0
         self.ACTION_TAKE_FROM_CACHE_START = 1
         self.ACTION_TAKE_FROM_CACHE_END = self.ACTION_TAKE_FROM_CACHE_START + self.num_numbers - 1
@@ -44,19 +45,32 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         self.reset()
 
     def reset(self):
-        self.numbers = np.array([num for num in range(1, self.num_numbers + 1)] * 2)
+        # Créer une liste avec les nombres de 1 à 20, chacun apparaissant deux fois
+        self.numbers = [num for num in range(1, self.num_numbers + 1)] * 2
         np.random.shuffle(self.numbers)
-        self.numbers = self.numbers.tolist()  # Convertir en liste pour pop()
         self.agent_grid = np.full((self.size, self.size), -1, dtype=np.int32)
         self.opponent_grid = np.full((self.size, self.size), -1, dtype=np.int32)
         self.place_initial_tiles(self.agent_grid)
         self.place_initial_tiles(self.opponent_grid)
         self.shared_cache = []
+        self.used_tiles_agent = {}  # Tuiles utilisées par l'agent
+        self.used_tiles_opponent = {}  # Tuiles utilisées par l'adversaire
+        # Mettre à jour les tuiles utilisées avec les tuiles initiales
+        self.update_used_tiles(self.agent_grid, self.used_tiles_agent)
+        self.update_used_tiles(self.opponent_grid, self.used_tiles_opponent)
         self._is_game_over = False
         self._score = 0.0
         self.agent_turn = True
         self.current_tile = -1
         return self.state_description()
+
+    def update_used_tiles(self, grid, used_tiles):
+        for tile in grid.flatten():
+            if tile != -1:
+                if tile in used_tiles:
+                    used_tiles[tile] += 1
+                else:
+                    used_tiles[tile] = 1
 
     def place_initial_tiles(self, grid):
         diagonal_positions = [(i, i) for i in range(self.size)]
@@ -71,7 +85,8 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         # Encodage de la grille de l'adversaire
         opponent_grid_flat = self.opponent_grid.flatten()
         # Encodage du cache partagé
-        cache_encoding = np.zeros(self.num_numbers + 1, dtype=np.int32)  # +1 pour l'indice 0 non utilisé
+        max_tile_value = self.num_numbers
+        cache_encoding = np.zeros(max_tile_value + 1, dtype=np.int32)  # +1 car l'indice 0 n'est pas utilisé
         for tile in self.shared_cache:
             cache_encoding[tile] += 1
         # Tuile courante
@@ -85,13 +100,13 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         if self.current_tile == -1:
             actions.append(self.ACTION_DRAW_FROM_DECK)
             # Actions pour prendre des tuiles spécifiques du cache
-            unique_tiles = np.unique(self.shared_cache)
+            unique_tiles = np.unique([tile for tile in self.shared_cache])
             for tile in unique_tiles:
                 action_id = self.ACTION_TAKE_FROM_CACHE_START + tile - 1
                 actions.append(action_id)
         else:
             actions.append(self.ACTION_ADD_TO_CACHE)
-            valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile)
+            valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile, self.used_tiles_agent)
             for idx in valid_positions:
                 action_id = self.ACTION_PLACE_TILE_START + idx
                 actions.append(action_id)
@@ -99,30 +114,54 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
 
     def action_mask(self) -> np.ndarray:
         mask = np.zeros((self.TOTAL_ACTIONS,), dtype=np.float32)
-        if self.current_tile == -1:
-            mask[self.ACTION_DRAW_FROM_DECK] = 1.0
-            unique_tiles = np.unique(self.shared_cache)
-            for tile in unique_tiles:
-                action_id = self.ACTION_TAKE_FROM_CACHE_START + tile - 1
-                mask[action_id] = 1.0
-        else:
-            mask[self.ACTION_ADD_TO_CACHE] = 1.0
-            valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile)
-            for idx in valid_positions:
-                action_id = self.ACTION_PLACE_TILE_START + idx
-                mask[action_id] = 1.0
+        available_actions = self.available_actions_ids()
+        mask[available_actions] = 1.0
         return mask
 
     def step(self, action: int):
         if self._is_game_over:
-            raise ValueError("La partie est terminée, veuillez réinitialiser l'environnement.")
+            # La partie est déjà terminée
+            next_state = self.state_description()
+            reward = self._score
+            done = True
+            return next_state, reward, done, {}
+
+        # Si ce n'est pas le tour de l'agent, l'adversaire doit jouer
         if not self.agent_turn:
-            raise ValueError("Ce n'est pas le tour de l'agent.")
+            # Laisser l'adversaire jouer
+            self.opponent_play()
+            # Après le tour de l'adversaire, vérifier si la partie est terminée
+            if self._is_game_over:
+                # Partie terminée pendant le tour de l'adversaire
+                next_state = self.state_description()
+                reward = self._score
+                done = True
+                return next_state, reward, done, {}
+            else:
+                # Le tour revient à l'agent
+                self.agent_turn = True
+                # Continuer pour traiter l'action de l'agent
+
+        # Vérifier à nouveau si la partie est terminée
+        if self._is_game_over:
+            next_state = self.state_description()
+            reward = self._score
+            done = True
+            return next_state, reward, done, {}
+
+        # Maintenant, c'est le tour de l'agent
         if self.action_mask()[action] == 0:
-            raise ValueError("Action invalide.")
+            # Action invalide, la partie se termine avec récompense 0.0
+            self._is_game_over = True
+            self._score = 0.0  # Récompense neutre pour action invalide
+            reward = self._score
+            next_state = self.state_description()
+            done = True
+            return next_state, reward, done, {}
 
         reward = 0.0
 
+        # Traitement de l'action de l'agent
         if self.current_tile == -1:
             if action == self.ACTION_DRAW_FROM_DECK:
                 self.current_tile = self.draw_tile_from_deck()
@@ -130,58 +169,127 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                     # Plus de tuiles à piocher, fin du jeu
                     self._is_game_over = True
                     self._score = self.calculate_score()
-                    reward = self._score
             elif self.ACTION_TAKE_FROM_CACHE_START <= action <= self.ACTION_TAKE_FROM_CACHE_END:
                 tile_value = action - self.ACTION_TAKE_FROM_CACHE_START + 1
                 if tile_value in self.shared_cache:
                     self.shared_cache.remove(tile_value)
+                    if tile_value in self.used_tiles_agent:
+                        # L'agent ne peut pas prendre cette tuile du cache
+                        # La partie se termine avec récompense 0.0
+                        self._is_game_over = True
+                        self._score = 0.0
+                        reward = self._score
+                        next_state = self.state_description()
+                        done = True
+                        return next_state, reward, done, {}
                     self.current_tile = tile_value
                 else:
-                    raise ValueError("Tuile non disponible dans le cache.")
+                    # Tuile non disponible dans le cache
+                    # La partie se termine avec récompense 0.0
+                    self._is_game_over = True
+                    self._score = 0.0
+                    reward = self._score
+                    next_state = self.state_description()
+                    done = True
+                    return next_state, reward, done, {}
             else:
-                raise ValueError("Action invalide lors de la sélection d'une tuile.")
-            reward = 0.0  # Pas de récompense pour prendre une tuile
+                # Action invalide lors de la sélection d'une tuile
+                self._is_game_over = True
+                self._score = 0.0
+                reward = self._score
+                next_state = self.state_description()
+                done = True
+                return next_state, reward, done, {}
         else:
+            if self.current_tile in self.used_tiles_agent:
+                # L'agent ne peut pas placer cette tuile sur sa grille
+                if action != self.ACTION_ADD_TO_CACHE:
+                    # Action invalide, la partie se termine avec récompense 0.0
+                    self._is_game_over = True
+                    self._score = 0.0
+                    reward = self._score
+                    next_state = self.state_description()
+                    done = True
+                    return next_state, reward, done, {}
             if action == self.ACTION_ADD_TO_CACHE:
                 self.shared_cache.append(self.current_tile)
                 self.current_tile = -1
                 self.agent_turn = False
-                self.opponent_play()
-                reward = 0.0  # Pas de récompense pour ajouter au cache
+                # L'adversaire va jouer au prochain appel de step
             elif self.ACTION_PLACE_TILE_START <= action <= self.ACTION_PLACE_TILE_END:
                 action_index = action - self.ACTION_PLACE_TILE_START
                 i = action_index // self.size
                 j = action_index % self.size
                 if not is_valid_placement_with_replacement_numba(self.agent_grid, i, j, self.current_tile):
-                    raise ValueError("Action invalide.")
-                if self.agent_grid[i, j] != -1:
-                    self.shared_cache.append(self.agent_grid[i, j])
-                self.agent_grid[i, j] = self.current_tile
-                self.current_tile = -1
-                if is_grid_complete_and_valid_numba(self.agent_grid):
+                    # Placement invalide, la partie se termine avec récompense 0.0
                     self._is_game_over = True
-                    reward = 1.0  # Récompense pour avoir complété la grille
-                else:
-                    reward = 0.0  # Pas de récompense pour un placement valide
-                self.agent_turn = False
-                self.opponent_play()
-            else:
-                raise ValueError("Action invalide.")
+                    self._score = 0.0
+                    reward = self._score
+                    next_state = self.state_description()
+                    done = True
+                    return next_state, reward, done, {}
+                if self.agent_grid[i, j] != -1:
+                    old_tile = self.agent_grid[i, j]
+                    # Mettre à jour les tuiles utilisées
+                    self.used_tiles_agent[old_tile] -= 1
+                    if self.used_tiles_agent[old_tile] == 0:
+                        del self.used_tiles_agent[old_tile]
+                    self.shared_cache.append(old_tile)
+                self.agent_grid[i, j] = self.current_tile
+                self.used_tiles_agent[self.current_tile] = self.used_tiles_agent.get(self.current_tile, 0) + 1
+                self.current_tile = -1
 
+                # Vérifier si la grille de l'agent est entièrement remplie
+                if self.is_grid_full(self.agent_grid):
+                    self._is_game_over = True
+                    self._score = self.calculate_score()
+                    reward = self._score
+                else:
+                    self.agent_turn = False
+                    # L'adversaire va jouer au prochain appel de step
+            else:
+                # Action invalide
+                self._is_game_over = True
+                self._score = 0.0
+                reward = self._score
+                next_state = self.state_description()
+                done = True
+                return next_state, reward, done, {}
+
+        # Après le tour de l'agent, vérifier si la partie est terminée
+        if self._is_game_over:
+            reward = self._score
+            next_state = self.state_description()
+            done = True
+            return next_state, reward, done, {}
+
+        # Si ce n'est plus le tour de l'agent, l'adversaire doit jouer
+        if not self.agent_turn:
+            self.opponent_play()
+            # Vérifier si la partie est terminée après le tour de l'adversaire
+            if self._is_game_over:
+                reward = self._score
+                next_state = self.state_description()
+                done = True
+                return next_state, reward, done, {}
+
+        # Retourner l'état suivant
         next_state = self.state_description()
         done = self._is_game_over
         return next_state, reward, done, {}
 
+
     def draw_tile_from_deck(self):
         if self.numbers:
-            return self.numbers.pop()
+            tile = self.numbers.pop()
+            return tile
         else:
             return -1
 
     def opponent_play(self):
         while not self.agent_turn and not self._is_game_over:
             if self.current_tile == -1:
-                # Décider aléatoirement de prendre du deck ou du cache
+                # Décider de prendre du deck ou du cache
                 choices = []
                 if self.numbers:
                     choices.append('deck')
@@ -195,17 +303,39 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 if choice == 'deck':
                     self.current_tile = self.draw_tile_from_deck()
                     if self.current_tile == -1:
-                        # Plus de tuiles à piocher, fin du jeu
                         self._is_game_over = True
                         self._score = self.calculate_score()
                         return
+                    if self.current_tile in self.used_tiles_opponent:
+                        # L'adversaire ne peut pas placer cette tuile
+                        pass  # Il décidera de l'ajouter au cache
                 else:
-                    self.current_tile = random.choice(self.shared_cache)
-                    self.shared_cache.remove(self.current_tile)
+                    available_tiles = [tile for tile in self.shared_cache]
+                    if available_tiles:
+                        self.current_tile = random.choice(available_tiles)
+                        self.shared_cache.remove(self.current_tile)
+                        if self.current_tile in self.used_tiles_opponent:
+                            # L'adversaire ne peut pas utiliser cette tuile
+                            # Il la laisse dans le cache
+                            self.shared_cache.append(self.current_tile)
+                            self.current_tile = -1
+                            self.agent_turn = True
+                            continue
+                    else:
+                        # Si aucune tuile disponible, passer le tour
+                        self.agent_turn = True
+                        self.current_tile = -1
+                        continue
             else:
-                # Décider aléatoirement d'ajouter au cache ou de placer sur la grille
+                if self.current_tile in self.used_tiles_opponent:
+                    # L'adversaire ne peut pas placer cette tuile, il doit l'ajouter au cache
+                    self.shared_cache.append(self.current_tile)
+                    self.current_tile = -1
+                    self.agent_turn = True
+                    continue
+                # Décider d'ajouter au cache ou de placer sur la grille
                 actions = ['cache']
-                valid_positions = self.get_valid_positions(self.opponent_grid, self.current_tile)
+                valid_positions = self.get_valid_positions(self.opponent_grid, self.current_tile, self.used_tiles_opponent)
                 if valid_positions:
                     actions.append('place')
                 action = random.choice(actions)
@@ -218,12 +348,20 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                     i = idx // self.size
                     j = idx % self.size
                     if self.opponent_grid[i, j] != -1:
-                        self.shared_cache.append(self.opponent_grid[i, j])
+                        old_tile = self.opponent_grid[i, j]
+                        # Mettre à jour les tuiles utilisées
+                        self.used_tiles_opponent[old_tile] -= 1
+                        if self.used_tiles_opponent[old_tile] == 0:
+                            del self.used_tiles_opponent[old_tile]
+                        self.shared_cache.append(old_tile)
                     self.opponent_grid[i, j] = self.current_tile
+                    self.used_tiles_opponent[self.current_tile] = self.used_tiles_opponent.get(self.current_tile, 0) + 1
                     self.current_tile = -1
-                    if is_grid_complete_and_valid_numba(self.opponent_grid):
+
+                    # Vérifier si la grille de l'adversaire est entièrement remplie
+                    if self.is_grid_full(self.opponent_grid):
                         self._is_game_over = True
-                        self._score = -1.0
+                        self._score = self.calculate_score()
                         return
                     self.agent_turn = True
 
@@ -246,10 +384,15 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         grid_str += f"Partie Terminée: {self._is_game_over}\n"
         return grid_str
 
-    def get_valid_positions(self, grid, number):
+    def get_valid_positions(self, grid, number, used_tiles):
+        if number in used_tiles:
+            return []
         # Appel à la fonction Numba pour obtenir les positions valides
         valid_positions = get_valid_positions_numba(grid, number)
         return valid_positions
+
+    def is_grid_full(self, grid):
+        return np.all(grid != -1)
 
     def calculate_score(self):
         # Calcul du score en fonction de la somme des tuiles
@@ -273,6 +416,20 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
             'is_game_over': self._is_game_over,
             'score': self._score
         }
+
+    def clone(self):
+        new_env = LuckyNumbersEnv(self.size)
+        new_env.numbers = self.numbers.copy()
+        new_env.agent_grid = self.agent_grid.copy()
+        new_env.opponent_grid = self.opponent_grid.copy()
+        new_env.shared_cache = self.shared_cache.copy()
+        new_env.used_tiles_agent = self.used_tiles_agent.copy()
+        new_env.used_tiles_opponent = self.used_tiles_opponent.copy()
+        new_env._is_game_over = self._is_game_over
+        new_env._score = self._score
+        new_env.agent_turn = self.agent_turn
+        new_env.current_tile = self.current_tile
+        return new_env
 
 # Fonctions Numba
 @njit
