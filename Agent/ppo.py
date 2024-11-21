@@ -85,7 +85,7 @@ class A2CAgent:
         state = np.expand_dims(state, axis=0)
         action_probs = self.policy_model(state, training=False).numpy()[0]
 
-        # Ensure action_mask is float32 and same dtype as action_probs
+        # Assurez-vous que action_mask est de type float32 et du même type que action_probs
         action_mask = action_mask.astype(np.float32)
         action_probs *= action_mask
 
@@ -94,13 +94,14 @@ class A2CAgent:
                 "Le masque d'action a annulé toutes les probabilités. Vérifiez la validité des actions."
             )
 
-        action_probs /= np.sum(action_probs)  # Normalize to get a valid probability distribution
+        action_probs /= np.sum(action_probs)  # Normaliser pour obtenir une distribution de probabilité valide
 
         action = np.random.choice(self.action_size, p=action_probs)
-        log_prob = np.log(action_probs[action] + 1e-8)  # Add epsilon for numerical stability
+        log_prob = np.log(action_probs[action] + 1e-8)  # Ajouter un epsilon pour la stabilité numérique
         value = self.value_model(state, training=False).numpy()[0][0]
 
         return action, log_prob, value
+
 
     def store_transition(self, state, action, reward, done, log_prob, value):
         self.states.append(state)

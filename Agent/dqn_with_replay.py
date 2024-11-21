@@ -14,7 +14,7 @@ class DQNAgentWithReplay:
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.gamma = gamma
-        self.path = "models/dqn_with_replay.keras"
+        self.path = "models/dqn_with_replay.h5"
 
         self.epsilon = epsilon_start
         self.epsilon_min = epsilon_end

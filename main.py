@@ -1,3 +1,5 @@
+# main.py
+
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -57,7 +59,6 @@ def choose_algorithm_gui():
     algo_window.mainloop()
 
     return algo_choice[0] if algo_choice else None
-
 
 def choose_algorithm(env):
     choice = choose_algorithm_gui()
@@ -128,12 +129,17 @@ def choose_game():
 
 def plot_training_rewards(episode_rewards, name, window=10):
     """Affiche la récompense cumulée par épisode avec une moyenne mobile pour visualiser l'entraînement."""
+    if len(episode_rewards) == 0:
+        print("Aucune récompense à afficher.")
+        return
+
     # Calculer la moyenne mobile
     moving_avg_rewards = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
 
     plt.figure(figsize=(10, 5))
     plt.plot(episode_rewards, label='Récompense cumulée par épisode', color='skyblue')
-    plt.plot(range(window - 1, len(episode_rewards)), moving_avg_rewards, label=f'Moyenne mobile ({window} épisodes)', color='blue')
+    if len(moving_avg_rewards) > 0:
+        plt.plot(range(window - 1, len(episode_rewards)), moving_avg_rewards, label=f'Moyenne mobile ({window} épisodes)', color='blue')
     plt.xlabel('Épisodes')
     plt.ylabel('Récompense cumulée (G)')
     plt.title(f'Évolution de la récompense cumulée par épisode - {name}')
@@ -202,6 +208,9 @@ def get_number_of_games():
 
 def plot_losses(losses, name):
     """Plot the loss values over episodes for PPO."""
+    if len(losses) == 0:
+        print("No loss values to plot.")
+        return
     plt.figure(figsize=(10, 5))
     plt.plot(losses, label='Loss per Episode', color='red')
     plt.xlabel('Episodes')
@@ -215,7 +224,7 @@ def main():
     action, game = choose_game()
     victory = []
     episode_rewards = []
-    epsilon = np.array([])
+    epsilon = []
     losses = []
 
     if action is None or game is None:
@@ -265,8 +274,10 @@ def main():
             while not done:
                 if algo == 'MCTS':
                     action = agent.choose_action(env)
-                else:
+                elif algo == 'A2C' or algo == 'PPO':  # Ajoutez le nom exact utilisé pour A2C/PPO
                     action_mask = env.action_mask()
+                    action, log_prob, value = agent.choose_action(state, action_mask)
+                else:
                     action = agent.choose_action(state)
 
                 try:
@@ -278,14 +289,20 @@ def main():
                     done = True
                     reward = 0.0  # Récompense neutre pour action invalide
                     next_state = state
-                    if algo != 'MCTS' and hasattr(agent, 'remember'):
+                    # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
+                    if algo not in ['DQN', 'MCTS'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
+                        agent.replay()
                     break
 
-                if algo != 'MCTS' and hasattr(agent, 'remember'):
+                # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
+                if algo not in ['DQN', 'MCTS'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                     agent.remember(state, action, reward, next_state, done)
                     # Entraînement après chaque étape
                     agent.replay()
+                elif algo == 'DQN' and hasattr(agent, 'learn'):
+                    # Pour DQN classique, utiliser la méthode 'learn'
+                    agent.learn(state, action, reward, next_state, done)
 
                 state = next_state
                 total_reward += reward
@@ -309,7 +326,7 @@ def main():
             # Enregistrer la récompense totale de l'épisode
             episode_rewards.append(total_reward)
             if hasattr(agent, 'epsilon'):
-                epsilon = np.append(epsilon, agent.epsilon)
+                epsilon.append(agent.epsilon)
 
             # Ajouter le résultat à la liste `victory`
             if total_reward > 0:
@@ -330,7 +347,7 @@ def main():
         # Affichage du graphique des récompenses cumulées
         plot_training_rewards(episode_rewards, algo)
         # Affichage de l'évolution de epsilon si applicable
-        if epsilon.size > 0:
+        if len(epsilon) > 0:
             plot_epsilon(epsilon, algo)
 
     else:
@@ -338,4 +355,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -73,7 +73,9 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                     used_tiles[tile] = 1
 
     def place_initial_tiles(self, grid):
+        # Toujours utiliser la diagonale principale (haut à gauche à bas à droite)
         diagonal_positions = [(i, i) for i in range(self.size)]
+        
         initial_numbers = sorted([self.numbers.pop() for _ in range(self.size)])
         for pos, num in zip(diagonal_positions, initial_numbers):
             row, col = pos
@@ -100,7 +102,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         if self.current_tile == -1:
             actions.append(self.ACTION_DRAW_FROM_DECK)
             # Actions pour prendre des tuiles spécifiques du cache
-            unique_tiles = np.unique([tile for tile in self.shared_cache])
+            unique_tiles = np.unique(self.shared_cache)
             for tile in unique_tiles:
                 action_id = self.ACTION_TAKE_FROM_CACHE_START + tile - 1
                 actions.append(action_id)
@@ -132,7 +134,6 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
             self.opponent_play()
             # Après le tour de l'adversaire, vérifier si la partie est terminée
             if self._is_game_over:
-                # Partie terminée pendant le tour de l'adversaire
                 next_state = self.state_description()
                 reward = self._score
                 done = True
@@ -174,8 +175,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 if tile_value in self.shared_cache:
                     self.shared_cache.remove(tile_value)
                     if tile_value in self.used_tiles_agent:
-                        # L'agent ne peut pas prendre cette tuile du cache
-                        # La partie se termine avec récompense 0.0
+                        # L'agent ne peut pas prendre cette tuile du cache s'il y a déjà un doublon
                         self._is_game_over = True
                         self._score = 0.0
                         reward = self._score
@@ -185,7 +185,6 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                     self.current_tile = tile_value
                 else:
                     # Tuile non disponible dans le cache
-                    # La partie se termine avec récompense 0.0
                     self._is_game_over = True
                     self._score = 0.0
                     reward = self._score
@@ -395,15 +394,33 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         return np.all(grid != -1)
 
     def calculate_score(self):
-        # Calcul du score en fonction de la somme des tuiles
-        agent_score = np.sum(self.agent_grid[self.agent_grid != -1])
-        opponent_score = np.sum(self.opponent_grid[self.opponent_grid != -1])
-        if agent_score < opponent_score:
+        # Calcul du score en fonction de qui a rempli la grille en premier
+        agent_full = self.is_grid_full(self.agent_grid)
+        opponent_full = self.is_grid_full(self.opponent_grid)
+        if agent_full and not opponent_full:
             return 1.0  # L'agent a gagné
-        elif agent_score > opponent_score:
+        elif opponent_full and not agent_full:
             return -1.0  # L'agent a perdu
+        elif agent_full and opponent_full:
+            # Si les deux grilles sont remplies simultanément, on peut déterminer en fonction de la somme
+            agent_score = np.sum(self.agent_grid[self.agent_grid != -1])
+            opponent_score = np.sum(self.opponent_grid[self.opponent_grid != -1])
+            if agent_score < opponent_score:
+                return 1.0
+            elif agent_score > opponent_score:
+                return -1.0
+            else:
+                return 0.0  # Match nul
         else:
-            return 0.0  # Match nul
+            # Si le deck est épuisé, déterminer en fonction de la somme des tuiles placées
+            agent_score = np.sum(self.agent_grid[self.agent_grid != -1])
+            opponent_score = np.sum(self.opponent_grid[self.opponent_grid != -1])
+            if agent_score < opponent_score:
+                return 1.0
+            elif agent_score > opponent_score:
+                return -1.0
+            else:
+                return 0.0  # Match nul
 
     def get_state(self):
         return {
