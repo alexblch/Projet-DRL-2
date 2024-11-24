@@ -10,16 +10,17 @@ from Environnements.luckynumberrand import LuckyNumbersGameRandConsole, play_n_g
 from Environnements.grid import GridWorld
 from Environnements.luckynumbergame import LuckyNumbersGame
 from Agent.dqn import DQNAgent
-from Agent.dqn_with_replay import DQNAgentWithReplay
-from Agent.dqn_with_p_replay import DQNAgentWithPrioritizedReplay
+from Agent.double_dqn_replay import DoubleDQNAgentWithReplay
+from Agent.double_dqn_with_p_replay import DoubleDQNAgentWithPrioritizedReplay
 from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
 from Agent.mcts import MCTS
 from Agent.reinforce_baseline import REINFORCEWithBaselineAgent
 from Agent.mcts_with_nn import MCTSWithNN
 from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
-from Agent.alphazero import AlphaZeroAgent  # Nouvelle importation
-from Agent.muzero import MuZeroAgent       # Nouvelle importation
+from Agent.alphazero import AlphaZeroAgent
+from Agent.muzero import MuZeroAgent
+from Agent.doubledqn import DoubleDQNAgent as DoubleDQNAgentNoReplay
 
 def clear_screen():
     if os.name == 'nt':
@@ -168,8 +169,8 @@ def choose_algorithm_gui():
 
     algorithms = [
         ("1 - DQN", "1"),
-        ("2 - DQN avec Experience Replay", "2"),
-        ("3 - DQN avec Prioritized Experience Replay", "3"),
+        ("2 - Double DQN avec Experience Replay", "2"),
+        ("3 - Double DQN avec Prioritized Experience Replay", "3"),
         ("4 - PPO", "4"),
         ("5 - REINFORCE", "5"),
         ("6 - Agent aléatoire (Random)", "6"),
@@ -179,6 +180,7 @@ def choose_algorithm_gui():
         ("10 - MCTS with Random Rollouts", "10"),
         ("11 - AlphaZero", "11"),
         ("12 - MuZero (Simplifié)", "12"),
+        ("13 - Double DQN (sans Experience Replay)", "13"),
     ]
 
     for text, value in algorithms:
@@ -196,9 +198,9 @@ def choose_algorithm(env):
     if choice == '1':
         return DQNAgent(env), 'DQN'
     elif choice == '2':
-        return DQNAgentWithReplay(env), 'DQN avec Experience Replay'
+        return DoubleDQNAgentWithReplay(env), 'Double DQN avec Experience Replay'
     elif choice == '3':
-        return DQNAgentWithPrioritizedReplay(env), 'DQN avec Prioritized Experience Replay'
+        return DoubleDQNAgentWithPrioritizedReplay(env), 'Double DQN avec Prioritized Experience Replay'
     elif choice == '4':
         return PPOAgent(env), 'PPO'
     elif choice == '5':
@@ -217,6 +219,8 @@ def choose_algorithm(env):
         return AlphaZeroAgent(env), 'AlphaZero'
     elif choice == '12':
         return MuZeroAgent(env), 'MuZero (Simplifié)'
+    elif choice == '13':
+        return DoubleDQNAgentNoReplay(env), 'Double DQN (sans Experience Replay)'
     else:
         messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
         return DQNAgent(env), 'DQN'
@@ -277,6 +281,8 @@ def main():
                     action = agent.choose_action(env)
                 elif algo in ['AlphaZero', 'MuZero (Simplifié)']:
                     action = agent.choose_action()
+                elif algo == 'Double DQN (sans Experience Replay)':
+                    action = agent.choose_action(state)
                 elif algo in ['A2C', 'PPO']:
                     action_mask = env.action_mask()
                     action, log_prob, value = agent.choose_action(state, action_mask)
@@ -293,13 +299,17 @@ def main():
                     reward = 0.0  # Récompense neutre pour action invalide
                     next_state = state
                     # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
-                    if algo not in ['DQN', 'MCTS', 'MCTS with Neural Networks', 'MCTS with Random Rollouts', 'AlphaZero', 'MuZero (Simplifié)'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
+                    if algo not in ['MCTS', 'MCTS with Neural Networks', 'MCTS with Random Rollouts', 'AlphaZero', 'MuZero (Simplifié)'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
                         agent.replay()
                     break
 
                 # Entraînement spécifique en fonction de l'algorithme
-                if algo in ['DQN', 'DQN avec Experience Replay', 'DQN avec Prioritized Experience Replay']:
+                if algo in ['DQN', 'Double DQN avec Experience Replay', 'Double DQN avec Prioritized Experience Replay']:
+                    if hasattr(agent, 'remember') and hasattr(agent, 'replay'):
+                        agent.remember(state, action, reward, next_state, done)
+                        agent.replay()
+                elif algo == 'Double DQN (sans Experience Replay)':
                     if hasattr(agent, 'learn'):
                         agent.learn(state, action, reward, next_state, done)
                 elif algo == 'REINFORCE with Baseline':
