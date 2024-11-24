@@ -1,5 +1,3 @@
-# main.py
-
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -15,6 +13,8 @@ from Agent.dqn_with_p_replay import DQNAgentWithPrioritizedReplay
 from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
 from Agent.mcts import MCTS
+from Agent.reinforce_baseline import REINFORCEWithBaselineAgent
+from Agent.mcts_with_NN import MCTSWithNN  # Nouvelle importation
 
 def clear_screen():
     if os.name == 'nt':
@@ -48,7 +48,9 @@ def choose_algorithm_gui():
         ("4 - PPO", "4"),
         ("5 - REINFORCE", "5"),
         ("6 - Agent aléatoire (Random)", "6"),
-        ("7 - MCTS", "7")  # Ajout de MCTS
+        ("7 - MCTS", "7"),
+        ("8 - REINFORCE with Baseline", "8"),
+        ("9 - MCTS with Neural Networks", "9")  # Nouvelle option ajoutée
     ]
 
     for text, value in algorithms:
@@ -76,7 +78,11 @@ def choose_algorithm(env):
     elif choice == '6':
         return LuckyNumbersGameRandConsole(), 'Agent aléatoire'
     elif choice == '7':
-        return MCTS(n_iterations=1000), 'MCTS'  # Retourne une instance de MCTS
+        return MCTS(n_iterations=1000), 'MCTS'
+    elif choice == '8':
+        return REINFORCEWithBaselineAgent(env), 'REINFORCE with Baseline'
+    elif choice == '9':
+        return MCTSWithNN(env), 'MCTS with Neural Networks'  # Nouveau cas ajouté
     else:
         messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
         return DQNAgent(env), 'DQN'
@@ -272,9 +278,9 @@ def main():
             total_reward = 0
 
             while not done:
-                if algo == 'MCTS':
+                if algo in ['MCTS', 'MCTS with Neural Networks']:
                     action = agent.choose_action(env)
-                elif algo == 'A2C' or algo == 'PPO':  # Ajoutez le nom exact utilisé pour A2C/PPO
+                elif algo in ['A2C', 'PPO']:
                     action_mask = env.action_mask()
                     action, log_prob, value = agent.choose_action(state, action_mask)
                 else:
@@ -290,19 +296,20 @@ def main():
                     reward = 0.0  # Récompense neutre pour action invalide
                     next_state = state
                     # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
-                    if algo not in ['DQN', 'MCTS'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
+                    if algo not in ['DQN', 'MCTS', 'MCTS with Neural Networks'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
                         agent.replay()
                     break
 
-                # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
-                if algo not in ['DQN', 'MCTS'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
+                # Entraînement spécifique en fonction de l'algorithme
+                if algo in ['DQN', 'DQN avec Experience Replay', 'DQN avec Prioritized Experience Replay']:
+                    if hasattr(agent, 'learn'):
+                        agent.learn(state, action, reward, next_state, done)
+                elif algo == 'REINFORCE with Baseline':
+                    agent.store_transition(state, action, reward)
+                elif hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                     agent.remember(state, action, reward, next_state, done)
-                    # Entraînement après chaque étape
                     agent.replay()
-                elif algo == 'DQN' and hasattr(agent, 'learn'):
-                    # Pour DQN classique, utiliser la méthode 'learn'
-                    agent.learn(state, action, reward, next_state, done)
 
                 state = next_state
                 total_reward += reward
@@ -319,8 +326,13 @@ def main():
                     print(env)
                     break
 
+            # Entraînement à la fin de l'épisode pour certains agents
+            if algo == 'REINFORCE with Baseline':
+                loss = agent.train()
+                losses.append(loss)
+
             # Enregistrement du modèle si nécessaire
-            if algo != 'MCTS' and hasattr(agent, 'save'):
+            if hasattr(agent, 'save'):
                 agent.save()
 
             # Enregistrer la récompense totale de l'épisode
@@ -349,6 +361,9 @@ def main():
         # Affichage de l'évolution de epsilon si applicable
         if len(epsilon) > 0:
             plot_epsilon(epsilon, algo)
+        # Affichage des pertes si applicable
+        if len(losses) > 0:
+            plot_losses(losses, algo)
 
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")

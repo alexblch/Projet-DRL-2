@@ -9,7 +9,7 @@ class DQNAgentWithReplay:
                  epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
         self.env = env
         self.state_size = env.state_description().shape[0]
-        self.action_size = env.TOTAL_ACTIONS  # Use the constant from the environment
+        self.action_size = env.TOTAL_ACTIONS  # Utiliser la constante de l'environnement
         self.memory = deque(maxlen=memory_size)
         self.batch_size = batch_size
         self.learning_rate = learning_rate
@@ -20,10 +20,10 @@ class DQNAgentWithReplay:
         self.epsilon_min = epsilon_end
         self.epsilon_decay = epsilon_decay
 
-        # Create the model with a simpler architecture for faster computation
+        # Créer le modèle avec une architecture simplifiée pour une exécution plus rapide
         self.model = self.create_model(input_shape=(self.state_size,), action_space=self.action_size)
 
-        # Configure GPU usage if available
+        # Configurer l'utilisation du GPU si disponible
         self.configure_gpu()
 
     def configure_gpu(self):
@@ -32,16 +32,17 @@ class DQNAgentWithReplay:
             try:
                 for gpu in physical_devices:
                     tf.config.experimental.set_memory_growth(gpu, True)
-                print(f"Using GPU: {physical_devices}")
+                print(f"Utilisation du GPU : {physical_devices}")
             except RuntimeError as e:
                 print(e)
         else:
-            print("No GPU found. Using CPU.")
+            print("Aucun GPU trouvé. Utilisation du CPU.")
 
     def create_model(self, input_shape, action_space, layer_sizes=[64, 64]):
         inputs = layers.Input(shape=input_shape)
-        x = layers.Dense(layer_sizes[0], activation='relu')(inputs)
-        x = layers.Dense(layer_sizes[1], activation='relu')(x)
+        x = inputs
+        for size in layer_sizes:
+            x = layers.Dense(size, activation='relu')(x)
         outputs = layers.Dense(action_space, activation='linear')(x)
         model = tf.keras.Model(inputs=inputs, outputs=outputs)
         model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
@@ -53,15 +54,18 @@ class DQNAgentWithReplay:
 
     def choose_action(self, state):
         action_mask = self.env.action_mask()
+        valid_actions = np.where(action_mask == 1)[0]
+
         if np.random.rand() < self.epsilon:
-            valid_actions = np.where(action_mask == 1)[0]
+            # Action aléatoire parmi les actions valides
             return np.random.choice(valid_actions)
-        state = np.expand_dims(state, axis=0)
-        q_values = self.model(state, training=False).numpy()[0]
-        # Apply the action mask
-        masked_q_values = np.full_like(q_values, -np.inf)
-        masked_q_values[action_mask == 1] = q_values[action_mask == 1]
-        return np.argmax(masked_q_values)
+        else:
+            state = np.expand_dims(state, axis=0)
+            q_values = self.model(state, training=False).numpy()[0]
+            # Appliquer le masque d'action
+            masked_q_values = np.full_like(q_values, -np.inf)
+            masked_q_values[valid_actions] = q_values[valid_actions]
+            return np.argmax(masked_q_values)
 
     def replay(self):
         if len(self.memory) < self.batch_size:
@@ -74,25 +78,27 @@ class DQNAgentWithReplay:
         next_states = np.array([sample[3] for sample in minibatch], dtype=np.float32)
         dones = np.array([sample[4] for sample in minibatch], dtype=np.float32)
 
-        # Batch prediction for states and next_states
+        # Prédiction en batch pour les états et les états suivants
         q_values = self.model(states, training=False).numpy()
         q_values_next = self.model(next_states, training=False).numpy()
 
-        # Compute target Q-values
-        max_q_values_next = np.max(q_values_next, axis=1)
-        targets = q_values.copy()
+        # Calcul des Q-valeurs cibles
         for i in range(self.batch_size):
+            action_mask_next = self.env.action_mask()
+            valid_actions_next = np.where(action_mask_next == 1)[0]
             if dones[i]:
-                targets[i, actions[i]] = rewards[i]
+                q_values[i, actions[i]] = rewards[i]
             else:
-                targets[i, actions[i]] = rewards[i] + self.gamma * max_q_values_next[i]
+                max_q_next = np.max(q_values_next[i][valid_actions_next])
+                q_values[i, actions[i]] = rewards[i] + self.gamma * max_q_next
 
-        # Train the model
-        self.model.fit(states, targets, epochs=1, verbose=0)
+        # Entraîner le modèle
+        self.model.fit(states, q_values, epochs=1, verbose=0)
 
-        # Update epsilon
+        # Mettre à jour epsilon
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
+            self.epsilon = max(self.epsilon_min, self.epsilon)  # S'assurer que epsilon ne descend pas en dessous de epsilon_min
 
     def save(self):
         self.model.save(self.path)

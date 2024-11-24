@@ -1,5 +1,3 @@
-# luckynumberenv.py
-
 import numpy as np
 import random
 from numba import njit
@@ -53,30 +51,16 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         self.place_initial_tiles(self.agent_grid)
         self.place_initial_tiles(self.opponent_grid)
         self.shared_cache = []
-        self.used_tiles_agent = {}  # Tuiles utilisées par l'agent
-        self.used_tiles_opponent = {}  # Tuiles utilisées par l'adversaire
-        # Mettre à jour les tuiles utilisées avec les tuiles initiales
-        self.update_used_tiles(self.agent_grid, self.used_tiles_agent)
-        self.update_used_tiles(self.opponent_grid, self.used_tiles_opponent)
         self._is_game_over = False
         self._score = 0.0
         self.agent_turn = True
         self.current_tile = -1
         return self.state_description()
 
-    def update_used_tiles(self, grid, used_tiles):
-        for tile in grid.flatten():
-            if tile != -1:
-                if tile in used_tiles:
-                    used_tiles[tile] += 1
-                else:
-                    used_tiles[tile] = 1
-
     def place_initial_tiles(self, grid):
-        # Toujours utiliser la diagonale principale (haut à gauche à bas à droite)
+        # Placer des tuiles aléatoires sur la diagonale principale sans les trier
         diagonal_positions = [(i, i) for i in range(self.size)]
-        
-        initial_numbers = sorted([self.numbers.pop() for _ in range(self.size)])
+        initial_numbers = [self.numbers.pop() for _ in range(self.size)]
         for pos, num in zip(diagonal_positions, initial_numbers):
             row, col = pos
             grid[row, col] = num
@@ -108,7 +92,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 actions.append(action_id)
         else:
             actions.append(self.ACTION_ADD_TO_CACHE)
-            valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile, self.used_tiles_agent)
+            valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile)
             for idx in valid_positions:
                 action_id = self.ACTION_PLACE_TILE_START + idx
                 actions.append(action_id)
@@ -174,14 +158,6 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 tile_value = action - self.ACTION_TAKE_FROM_CACHE_START + 1
                 if tile_value in self.shared_cache:
                     self.shared_cache.remove(tile_value)
-                    if tile_value in self.used_tiles_agent:
-                        # L'agent ne peut pas prendre cette tuile du cache s'il y a déjà un doublon
-                        self._is_game_over = True
-                        self._score = 0.0
-                        reward = self._score
-                        next_state = self.state_description()
-                        done = True
-                        return next_state, reward, done, {}
                     self.current_tile = tile_value
                 else:
                     # Tuile non disponible dans le cache
@@ -200,10 +176,10 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                 done = True
                 return next_state, reward, done, {}
         else:
-            if self.current_tile in self.used_tiles_agent:
-                # L'agent ne peut pas placer cette tuile sur sa grille
+            # Vérifier si la tuile est déjà dans la grille de l'agent
+            if self.current_tile in self.agent_grid:
                 if action != self.ACTION_ADD_TO_CACHE:
-                    # Action invalide, la partie se termine avec récompense 0.0
+                    # Impossible de placer un doublon
                     self._is_game_over = True
                     self._score = 0.0
                     reward = self._score
@@ -229,13 +205,8 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                     return next_state, reward, done, {}
                 if self.agent_grid[i, j] != -1:
                     old_tile = self.agent_grid[i, j]
-                    # Mettre à jour les tuiles utilisées
-                    self.used_tiles_agent[old_tile] -= 1
-                    if self.used_tiles_agent[old_tile] == 0:
-                        del self.used_tiles_agent[old_tile]
                     self.shared_cache.append(old_tile)
                 self.agent_grid[i, j] = self.current_tile
-                self.used_tiles_agent[self.current_tile] = self.used_tiles_agent.get(self.current_tile, 0) + 1
                 self.current_tile = -1
 
                 # Vérifier si la grille de l'agent est entièrement remplie
@@ -277,7 +248,6 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         done = self._is_game_over
         return next_state, reward, done, {}
 
-
     def draw_tile_from_deck(self):
         if self.numbers:
             tile = self.numbers.pop()
@@ -305,36 +275,27 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                         self._is_game_over = True
                         self._score = self.calculate_score()
                         return
-                    if self.current_tile in self.used_tiles_opponent:
-                        # L'adversaire ne peut pas placer cette tuile
-                        pass  # Il décidera de l'ajouter au cache
                 else:
                     available_tiles = [tile for tile in self.shared_cache]
                     if available_tiles:
                         self.current_tile = random.choice(available_tiles)
                         self.shared_cache.remove(self.current_tile)
-                        if self.current_tile in self.used_tiles_opponent:
-                            # L'adversaire ne peut pas utiliser cette tuile
-                            # Il la laisse dans le cache
-                            self.shared_cache.append(self.current_tile)
-                            self.current_tile = -1
-                            self.agent_turn = True
-                            continue
                     else:
                         # Si aucune tuile disponible, passer le tour
                         self.agent_turn = True
                         self.current_tile = -1
                         continue
             else:
-                if self.current_tile in self.used_tiles_opponent:
-                    # L'adversaire ne peut pas placer cette tuile, il doit l'ajouter au cache
+                # Vérifier si la tuile est déjà dans la grille de l'adversaire
+                if self.current_tile in self.opponent_grid:
+                    # L'adversaire ne peut pas placer un doublon
                     self.shared_cache.append(self.current_tile)
                     self.current_tile = -1
                     self.agent_turn = True
                     continue
                 # Décider d'ajouter au cache ou de placer sur la grille
                 actions = ['cache']
-                valid_positions = self.get_valid_positions(self.opponent_grid, self.current_tile, self.used_tiles_opponent)
+                valid_positions = self.get_valid_positions(self.opponent_grid, self.current_tile)
                 if valid_positions:
                     actions.append('place')
                 action = random.choice(actions)
@@ -348,13 +309,8 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
                     j = idx % self.size
                     if self.opponent_grid[i, j] != -1:
                         old_tile = self.opponent_grid[i, j]
-                        # Mettre à jour les tuiles utilisées
-                        self.used_tiles_opponent[old_tile] -= 1
-                        if self.used_tiles_opponent[old_tile] == 0:
-                            del self.used_tiles_opponent[old_tile]
                         self.shared_cache.append(old_tile)
                     self.opponent_grid[i, j] = self.current_tile
-                    self.used_tiles_opponent[self.current_tile] = self.used_tiles_opponent.get(self.current_tile, 0) + 1
                     self.current_tile = -1
 
                     # Vérifier si la grille de l'adversaire est entièrement remplie
@@ -383,10 +339,9 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         grid_str += f"Partie Terminée: {self._is_game_over}\n"
         return grid_str
 
-    def get_valid_positions(self, grid, number, used_tiles):
-        if number in used_tiles:
+    def get_valid_positions(self, grid, number):
+        if number in grid:
             return []
-        # Appel à la fonction Numba pour obtenir les positions valides
         valid_positions = get_valid_positions_numba(grid, number)
         return valid_positions
 
@@ -402,23 +357,14 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         elif opponent_full and not agent_full:
             return -1.0  # L'agent a perdu
         elif agent_full and opponent_full:
-            # Si les deux grilles sont remplies simultanément, on peut déterminer en fonction de la somme
-            agent_score = np.sum(self.agent_grid[self.agent_grid != -1])
-            opponent_score = np.sum(self.opponent_grid[self.opponent_grid != -1])
-            if agent_score < opponent_score:
-                return 1.0
-            elif agent_score > opponent_score:
-                return -1.0
-            else:
-                return 0.0  # Match nul
+            return 0.0  # Match nul
         else:
-            # Si le deck est épuisé, déterminer en fonction de la somme des tuiles placées
-            agent_score = np.sum(self.agent_grid[self.agent_grid != -1])
-            opponent_score = np.sum(self.opponent_grid[self.opponent_grid != -1])
-            if agent_score < opponent_score:
-                return 1.0
-            elif agent_score > opponent_score:
-                return -1.0
+            agent_empty = np.sum(self.agent_grid == -1)
+            opponent_empty = np.sum(self.opponent_grid == -1)
+            if agent_empty < opponent_empty:
+                return 1.0  # L'agent a moins de cases vides
+            elif agent_empty > opponent_empty:
+                return -1.0  # L'adversaire a moins de cases vides
             else:
                 return 0.0  # Match nul
 
@@ -440,8 +386,6 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         new_env.agent_grid = self.agent_grid.copy()
         new_env.opponent_grid = self.opponent_grid.copy()
         new_env.shared_cache = self.shared_cache.copy()
-        new_env.used_tiles_agent = self.used_tiles_agent.copy()
-        new_env.used_tiles_opponent = self.used_tiles_opponent.copy()
         new_env._is_game_over = self._is_game_over
         new_env._score = self._score
         new_env.agent_turn = self.agent_turn
@@ -456,17 +400,17 @@ def is_valid_placement_numba(grid, row, col, number):
     for j in range(size):
         num = grid[row, j]
         if num != -1:
-            if j < col and num > number:
+            if j < col and num >= number:
                 return False
-            if j > col and num < number:
+            if j > col and num <= number:
                 return False
     # Vérification sur la colonne
     for i in range(size):
         num = grid[i, col]
         if num != -1:
-            if i < row and num > number:
+            if i < row and num >= number:
                 return False
-            if i > row and num < number:
+            if i > row and num <= number:
                 return False
     return True
 
