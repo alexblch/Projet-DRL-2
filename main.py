@@ -1,3 +1,5 @@
+# main.py
+
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -14,13 +16,136 @@ from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
 from Agent.mcts import MCTS
 from Agent.reinforce_baseline import REINFORCEWithBaselineAgent
-from Agent.mcts_with_NN import MCTSWithNN  # Nouvelle importation
+from Agent.mcts_with_nn import MCTSWithNN
+from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
+from Agent.alphazero import AlphaZeroAgent  # Nouvelle importation
+from Agent.muzero import MuZeroAgent       # Nouvelle importation
 
 def clear_screen():
     if os.name == 'nt':
         os.system('cls')
     else:
         os.system('clear')
+
+def choose_game():
+    game_choice = []
+    action_choice = []
+
+    def on_select():
+        game = game_var.get()
+        action = action_var.get()
+        game_choice.append(game)
+        action_choice.append(action)
+        game_window.destroy()
+
+    def on_close():
+        game_window.destroy()
+
+    game_window = tk.Tk()
+    game_window.title("Choix du Jeu et de l'Action")
+    game_window.protocol("WM_DELETE_WINDOW", on_close)  # Gestion de la fermeture de la fenêtre
+
+    tk.Label(game_window, text="Veuillez choisir un jeu :").pack(pady=10)
+    game_var = tk.StringVar(value="LuckyNumber")
+
+    games = [
+        ("Lucky Number", "LuckyNumber"),
+        ("GridWorld", "GridWorld"),
+    ]
+
+    for text, value in games:
+        tk.Radiobutton(game_window, text=text, variable=game_var, value=value).pack(anchor=tk.W)
+
+    tk.Label(game_window, text="Veuillez choisir une action :").pack(pady=10)
+    action_var = tk.StringVar(value="train")
+
+    actions = [
+        ("Jouer en mode classique", "play_classic"),
+        ("IA vs IA (aléatoire)", "random_vs_random"),
+        ("Entraîner un agent", "train"),
+    ]
+
+    for text, value in actions:
+        tk.Radiobutton(game_window, text=text, variable=action_var, value=value).pack(anchor=tk.W)
+
+    tk.Button(game_window, text="Valider", command=on_select).pack(pady=10)
+
+    game_window.mainloop()
+
+    return action_choice[0] if action_choice else None, game_choice[0] if game_choice else None
+
+def get_number_of_games():
+    n_games = []
+
+    def on_submit():
+        try:
+            n = int(entry.get())
+            if n <= 0:
+                raise ValueError
+            n_games.append(n)
+            num_games_window.destroy()
+        except ValueError:
+            messagebox.showerror("Entrée invalide", "Veuillez entrer un nombre entier positif.")
+
+    num_games_window = tk.Tk()
+    num_games_window.title("Nombre de parties")
+    tk.Label(num_games_window, text="Entrez le nombre de parties à jouer :").pack(pady=10)
+    entry = tk.Entry(num_games_window)
+    entry.pack(pady=5)
+    tk.Button(num_games_window, text="Valider", command=on_submit).pack(pady=10)
+    num_games_window.mainloop()
+
+    return n_games[0] if n_games else None
+
+def get_number_of_episodes():
+    n_episodes = []
+
+    def on_submit():
+        try:
+            n = int(entry.get())
+            if n <= 0:
+                raise ValueError
+            n_episodes.append(n)
+            num_episodes_window.destroy()
+        except ValueError:
+            messagebox.showerror("Entrée invalide", "Veuillez entrer un nombre entier positif.")
+
+    num_episodes_window = tk.Tk()
+    num_episodes_window.title("Nombre d'épisodes")
+    tk.Label(num_episodes_window, text="Entrez le nombre d'épisodes d'entraînement :").pack(pady=10)
+    entry = tk.Entry(num_episodes_window)
+    entry.pack(pady=5)
+    tk.Button(num_episodes_window, text="Valider", command=on_submit).pack(pady=10)
+    num_episodes_window.mainloop()
+
+    return n_episodes[0] if n_episodes else None
+
+def plot_training_rewards(episode_rewards, algo):
+    plt.figure()
+    plt.plot(episode_rewards)
+    plt.xlabel('Épisode')
+    plt.ylabel('Récompense Totale')
+    plt.title(f"Récompenses Totales par Épisode - {algo}")
+    plt.savefig(f"plots/{algo}_training_rewards.png")
+    plt.show()
+
+def plot_epsilon(epsilon_values, algo):
+    plt.figure()
+    plt.plot(epsilon_values)
+    plt.xlabel('Épisode')
+    plt.ylabel('Valeur de epsilon')
+    plt.title(f"Évolution de epsilon par Épisode - {algo}")
+    plt.savefig(f"plots/{algo}_epsilon.png")
+    plt.show()
+
+def plot_losses(losses, algo):
+    plt.figure()
+    plt.plot(losses)
+    plt.xlabel('Épisode')
+    plt.ylabel('Perte')
+    plt.title(f"Perte par Épisode - {algo}")
+    plt.savefig(f"plots/{algo}_losses.png")
+    plt.show()
 
 def choose_algorithm_gui():
     algo_choice = []
@@ -50,7 +175,10 @@ def choose_algorithm_gui():
         ("6 - Agent aléatoire (Random)", "6"),
         ("7 - MCTS", "7"),
         ("8 - REINFORCE with Baseline", "8"),
-        ("9 - MCTS with Neural Networks", "9")  # Nouvelle option ajoutée
+        ("9 - MCTS with Neural Networks", "9"),
+        ("10 - MCTS with Random Rollouts", "10"),
+        ("11 - AlphaZero", "11"),
+        ("12 - MuZero (Simplifié)", "12"),
     ]
 
     for text, value in algorithms:
@@ -82,149 +210,16 @@ def choose_algorithm(env):
     elif choice == '8':
         return REINFORCEWithBaselineAgent(env), 'REINFORCE with Baseline'
     elif choice == '9':
-        return MCTSWithNN(env), 'MCTS with Neural Networks'  # Nouveau cas ajouté
+        return MCTSWithNN(env), 'MCTS with Neural Networks'
+    elif choice == '10':
+        return MCTSWithRandomRollouts(n_iterations=1000), 'MCTS with Random Rollouts'
+    elif choice == '11':
+        return AlphaZeroAgent(env), 'AlphaZero'
+    elif choice == '12':
+        return MuZeroAgent(env), 'MuZero (Simplifié)'
     else:
         messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
         return DQNAgent(env), 'DQN'
-
-def choose_game_gui():
-    game_choice = []
-
-    def on_select():
-        choice = game_var.get()
-        game_choice.append(choice)
-        game_window.destroy()
-
-    game_window = tk.Tk()
-    game_window.title("Choix du Jeu")
-
-    tk.Label(game_window, text="Veuillez choisir le jeu :").pack(pady=10)
-
-    game_var = tk.StringVar(value="1")
-
-    games = [
-        ("1 - Lucky Number classique contre un agent aléatoire", "1"),
-        ("2 - Lucky Number - Entraîner un agent", "2"),
-        ("3 - GridWorld", "3"),
-        ("4 - Lucky Number IA vs IA (Aléatoire)", "4")
-    ]
-
-    for text, value in games:
-        tk.Radiobutton(game_window, text=text, variable=game_var, value=value).pack(anchor=tk.W)
-
-    tk.Button(game_window, text="Valider", command=on_select).pack(pady=10)
-
-    game_window.mainloop()
-
-    return game_choice[0]
-
-def choose_game():
-    choice = choose_game_gui()
-
-    if choice == '1':
-        return 'play_classic', 'LuckyNumber'
-    elif choice == '2':
-        return 'train', 'LuckyNumber'
-    elif choice == '3':
-        return 'train', 'GridWorld'
-    elif choice == '4':
-        return 'random_vs_random', 'LuckyNumber'
-    else:
-        messagebox.showwarning("Choix invalide", "Choix invalide. Retour au menu principal.")
-        return None, None
-
-def plot_training_rewards(episode_rewards, name, window=10):
-    """Affiche la récompense cumulée par épisode avec une moyenne mobile pour visualiser l'entraînement."""
-    if len(episode_rewards) == 0:
-        print("Aucune récompense à afficher.")
-        return
-
-    # Calculer la moyenne mobile
-    moving_avg_rewards = np.convolve(episode_rewards, np.ones(window) / window, mode='valid')
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(episode_rewards, label='Récompense cumulée par épisode', color='skyblue')
-    if len(moving_avg_rewards) > 0:
-        plt.plot(range(window - 1, len(episode_rewards)), moving_avg_rewards, label=f'Moyenne mobile ({window} épisodes)', color='blue')
-    plt.xlabel('Épisodes')
-    plt.ylabel('Récompense cumulée (G)')
-    plt.title(f'Évolution de la récompense cumulée par épisode - {name}')
-    plt.legend()
-    plt.grid()
-    plt.show()
-
-def plot_epsilon(epsilon, name):
-    if len(epsilon) == 0:
-        print("No epsilon values to plot.")
-        return
-    plt.figure(figsize=(10, 5))
-    plt.plot(epsilon, label='Epsilon')
-    plt.xlabel('Épisodes')
-    plt.ylabel('Epsilon')
-    plt.title(f'Évolution de Epsilon - {name}')
-    plt.legend()
-    plt.grid()
-    plt.show()
-
-def get_number_of_episodes():
-    episodes = []
-
-    def on_submit():
-        try:
-            n = int(entry.get())
-            episodes.append(n)
-            episodes_window.destroy()
-        except ValueError:
-            messagebox.showerror("Erreur", "Veuillez entrer un nombre entier.")
-
-    episodes_window = tk.Tk()
-    episodes_window.title("Nombre d'Épisodes")
-
-    tk.Label(episodes_window, text="Entrez le nombre d'épisodes pour l'entraînement (par ex. 1000) :").pack(pady=10)
-    entry = tk.Entry(episodes_window)
-    entry.pack()
-    tk.Button(episodes_window, text="Valider", command=on_submit).pack(pady=10)
-
-    episodes_window.mainloop()
-
-    return episodes[0] if episodes else 1000  # Valeur par défaut
-
-def get_number_of_games():
-    games = []
-
-    def on_submit():
-        try:
-            n = int(entry.get())
-            games.append(n)
-            games_window.destroy()
-        except ValueError:
-            messagebox.showerror("Erreur", "Veuillez entrer un nombre entier.")
-
-    games_window = tk.Tk()
-    games_window.title("Nombre de Parties")
-
-    tk.Label(games_window, text="Entrez le nombre de parties à jouer :").pack(pady=10)
-    entry = tk.Entry(games_window)
-    entry.pack()
-    tk.Button(games_window, text="Valider", command=on_submit).pack(pady=10)
-
-    games_window.mainloop()
-
-    return games[0] if games else 1  # Valeur par défaut
-
-def plot_losses(losses, name):
-    """Plot the loss values over episodes for PPO."""
-    if len(losses) == 0:
-        print("No loss values to plot.")
-        return
-    plt.figure(figsize=(10, 5))
-    plt.plot(losses, label='Loss per Episode', color='red')
-    plt.xlabel('Episodes')
-    plt.ylabel('Loss')
-    plt.title(f'Loss over Episodes for {name}')
-    plt.legend()
-    plt.grid()
-    plt.show()
 
 def main():
     action, game = choose_game()
@@ -278,8 +273,10 @@ def main():
             total_reward = 0
 
             while not done:
-                if algo in ['MCTS', 'MCTS with Neural Networks']:
+                if algo in ['MCTS', 'MCTS with Neural Networks', 'MCTS with Random Rollouts']:
                     action = agent.choose_action(env)
+                elif algo in ['AlphaZero', 'MuZero (Simplifié)']:
+                    action = agent.choose_action()
                 elif algo in ['A2C', 'PPO']:
                     action_mask = env.action_mask()
                     action, log_prob, value = agent.choose_action(state, action_mask)
@@ -296,7 +293,7 @@ def main():
                     reward = 0.0  # Récompense neutre pour action invalide
                     next_state = state
                     # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
-                    if algo not in ['DQN', 'MCTS', 'MCTS with Neural Networks'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
+                    if algo not in ['DQN', 'MCTS', 'MCTS with Neural Networks', 'MCTS with Random Rollouts', 'AlphaZero', 'MuZero (Simplifié)'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
                         agent.replay()
                     break
@@ -330,6 +327,12 @@ def main():
             if algo == 'REINFORCE with Baseline':
                 loss = agent.train()
                 losses.append(loss)
+            elif algo == 'AlphaZero':
+                winner = env.score()
+                agent.train(winner)
+            elif algo == 'MuZero (Simplifié)':
+                winner = env.score()
+                agent.train(winner)
 
             # Enregistrement du modèle si nécessaire
             if hasattr(agent, 'save'):
