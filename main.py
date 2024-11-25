@@ -16,7 +16,7 @@ from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
 from Agent.mcts import MCTS
 from Agent.reinforce_baseline import REINFORCEWithBaselineAgent
-from Agent.mcts_with_nn import MCTSWithNN
+from Agent.mcts_with_NN import MCTSWithNN
 from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
 from Agent.alphazero import AlphaZeroAgent
 from Agent.muzero import MuZeroAgent
@@ -121,12 +121,25 @@ def get_number_of_episodes():
 
     return n_episodes[0] if n_episodes else None
 
+
 def plot_training_rewards(episode_rewards, algo):
     plt.figure()
-    plt.plot(episode_rewards)
+    # Tracé des récompenses par épisode
+    plt.plot(episode_rewards, label='Récompenses Totales')
+    
+    # Calcul de la moyenne glissante sur 10 000 itérations
+    window_size = 1
+    if len(episode_rewards) >= window_size:
+        moving_average = np.convolve(episode_rewards, np.ones(window_size)/window_size, mode='valid')
+        plt.plot(range(window_size - 1, len(episode_rewards)), moving_average, label=f'Moyenne {window_size} Épisodes', color='orange')
+    else:
+        print("Attention : Moins de 10 000 épisodes, moyenne glissante non calculée.")
+    
+    # Ajustements graphiques
     plt.xlabel('Épisode')
     plt.ylabel('Récompense Totale')
     plt.title(f"Récompenses Totales par Épisode - {algo}")
+    plt.legend()
     plt.savefig(f"plots/{algo}_training_rewards.png")
     plt.show()
 
@@ -170,18 +183,19 @@ def choose_algorithm_gui():
     algorithms = [
         ("1 - DQN", "1"),
         ("2 - Double DQN avec Experience Replay", "2"),
-        ("3 - Double DQN avec Prioritized Experience Replay", "3"),
-        ("4 - PPO", "4"),
+        ("3 - Double DQN (sans Experience Replay)", "13"),
+        ("4 - Double DQN avec Prioritized Experience Replay", "3"),
         ("5 - REINFORCE", "5"),
-        ("6 - Agent aléatoire (Random)", "6"),
-        ("7 - MCTS", "7"),
-        ("8 - REINFORCE with Baseline", "8"),
-        ("9 - MCTS with Neural Networks", "9"),
-        ("10 - MCTS with Random Rollouts", "10"),
-        ("11 - AlphaZero", "11"),
-        ("12 - MuZero (Simplifié)", "12"),
-        ("13 - Double DQN (sans Experience Replay)", "13"),
+        ("6 - REINFORCE with Baseline", "8"),
+        ("7 - PPO", "4"),
+        ("8 - Agent aléatoire (Random)", "6"),
+        ("9 - MCTS", "7"),
+        ("10 - MCTS with Neural Networks", "9"),
+        ("11 - MCTS with Random Rollouts", "10"),
+        ("12 - AlphaZero", "11"),
+        ("13 - MuZero (Simplifié)", "12"),
     ]
+
 
     for text, value in algorithms:
         tk.Radiobutton(algo_window, text=text, variable=algo_var, value=value).pack(anchor=tk.W)
