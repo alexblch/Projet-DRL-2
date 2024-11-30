@@ -9,25 +9,24 @@ class Node:
         self.children = []
         self.visits = 0
         self.value = 0.0
-        self.untried_actions = None
+        self.untried_actions = state.available_actions_ids().tolist()  # Initialiser ici
 
     def is_fully_expanded(self):
-        return self.untried_actions is not None and len(self.untried_actions) == 0
+        return len(self.untried_actions) == 0
 
     def expand(self):
-        if self.untried_actions is None:
-            self.untried_actions = self.state.available_actions_ids().tolist()
-
-    def add_child(self, action, next_state):
-        child = Node(state=next_state, parent=self, action=action)
-        self.children.append(child)
-        self.untried_actions.remove(action)
-        return child
+        action = self.untried_actions.pop()
+        next_state = self.state.clone()
+        next_state.step(action)
+        child_node = Node(state=next_state, parent=self, action=action)
+        self.children.append(child_node)
+        return child_node
 
     def best_child(self, c_param=1.4):
+        total_visits = self.visits
         choices_weights = [
             (child.value / child.visits) +
-            c_param * np.sqrt(2 * np.log(self.visits) / child.visits)
+            c_param * np.sqrt(2 * np.log(total_visits) / child.visits)
             for child in self.children
         ]
         return self.children[np.argmax(choices_weights)]
@@ -37,29 +36,27 @@ class Node:
         self.value += reward
 
 class MCTS:
-    def __init__(self, n_iterations=1000):
+    def __init__(self, env, n_iterations=1000, c_param=1.4):
+        self.env = env
         self.n_iterations = n_iterations
+        self.c_param = c_param
 
-    def choose_action(self, env):
-        root = Node(state=env.clone())
+    def choose_action(self):
+        root = Node(state=self.env.clone())
+
         for _ in range(self.n_iterations):
             node = root
-            state = env.clone()
+            state = self.env.clone()
 
             # Sélection
-            while not state.is_game_over() and node.is_fully_expanded() and node.children:
-                node = node.best_child()
-                state = node.state  # Synchronisation de l'état
+            while node.is_fully_expanded() and node.children:
+                node = node.best_child(self.c_param)
+                state.step(node.action)
 
             # Expansion
             if not state.is_game_over():
-                node.expand()
-                if node.untried_actions:
-                    action = random.choice(node.untried_actions)
-                    next_state = state.clone()
-                    next_state.step(action)
-                    node = node.add_child(action, next_state)
-                    state = next_state  # Mettre à jour l'état pour la simulation
+                node = node.expand()
+                state.step(node.action)
 
             # Simulation
             sim_state = state.clone()
@@ -70,10 +67,9 @@ class MCTS:
 
             # Rétropropagation
             reward = sim_state.score()
-            # Nous supposons que la récompense est du point de vue du joueur racine
-
             while node is not None:
                 node.update(reward)
+                reward = -reward  # Inversion du résultat pour l'adversaire
                 node = node.parent
 
         # Retourne l'action avec le plus grand nombre de visites

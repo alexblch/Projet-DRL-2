@@ -14,14 +14,16 @@ from Agent.double_dqn_replay import DoubleDQNAgentWithReplay
 from Agent.double_dqn_with_p_replay import DoubleDQNAgentWithPrioritizedReplay
 from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
-from Agent.mcts import MCTS
 from Agent.reinforce_baseline import REINFORCEWithBaselineAgent
-from Agent.reinforcebaselinelearnedcritic import REINFORCEWithBaselineLearnedCriticAgent  # Nouvel agent
+from Agent.reinforcebaselinelearnedcritic import REINFORCEWithBaselineLearnedCriticAgent
 from Agent.mcts_with_NN import MCTSWithNN
-from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
 from Agent.alphazero import AlphaZeroAgent
 from Agent.muzero import MuZeroAgent
 from Agent.doubledqn import DoubleDQNAgent as DoubleDQNAgentNoReplay
+from Agent.mcts import MCTS
+
+# Importation de la nouvelle classe MCTSWithRandomRollouts
+from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
 
 def clear_screen():
     if os.name == 'nt':
@@ -45,7 +47,7 @@ def choose_game():
 
     game_window = tk.Tk()
     game_window.title("Choix du Jeu et de l'Action")
-    game_window.protocol("WM_DELETE_WINDOW", on_close)  # Gestion de la fermeture de la fenêtre
+    game_window.protocol("WM_DELETE_WINDOW", on_close)
 
     tk.Label(game_window, text="Veuillez choisir un jeu :").pack(pady=10)
     game_var = tk.StringVar(value="LuckyNumber")
@@ -162,7 +164,7 @@ def choose_algorithm_gui():
 
     algo_window = tk.Tk()
     algo_window.title("Choix de l'Algorithme")
-    algo_window.protocol("WM_DELETE_WINDOW", on_close)  # Gestion de la fermeture de la fenêtre
+    algo_window.protocol("WM_DELETE_WINDOW", on_close)
 
     tk.Label(algo_window, text="Veuillez choisir l'algorithme de renforcement :").pack(pady=10)
 
@@ -216,11 +218,14 @@ def choose_algorithm(env):
     elif choice == '9':
         return LuckyNumbersGameRandConsole(), 'Agent aléatoire'
     elif choice == '10':
-        return MCTS(n_iterations=1000), 'MCTS'
+        return MCTS(env=env, n_iterations=1000), 'MCTS'
     elif choice == '11':
-        return MCTSWithNN(env), 'MCTS with Neural Networks'
+        return MCTSWithNN(env=env, n_iterations=1000), 'MCTS with Neural Networks'
+
     elif choice == '12':
-        return MCTSWithRandomRollouts(n_iterations=1000), 'MCTS with Random Rollouts'
+        return MCTSWithRandomRollouts(env=env, n_simulations=1000), 'MCTS with Random Rollouts'
+
+
     elif choice == '13':
         return AlphaZeroAgent(env), 'AlphaZero'
     elif choice == '14':
@@ -282,13 +287,12 @@ def main():
 
             while not done:
                 if algo in ['MCTS', 'MCTS with Neural Networks', 'MCTS with Random Rollouts']:
-                    action = agent.choose_action(env)
+                    action = agent.choose_action()
                 elif algo in ['AlphaZero', 'MuZero (Simplifié)']:
                     action = agent.choose_action()
                 elif algo == 'Double DQN (sans Experience Replay)':
                     action = agent.choose_action(state)
                 elif algo in ['A2C', 'PPO']:
-                    # action_mask = env.action_mask()  # Supprimé car non utilisé
                     action, log_prob, value = agent.choose_action(state)
                 else:
                     action = agent.choose_action(state)
@@ -300,15 +304,13 @@ def main():
                 except ValueError as ex:
                     print(f"Action invalide ou erreur d'état: {ex}")
                     done = True
-                    reward = 0.0  # Récompense neutre pour action invalide
+                    reward = 0.0
                     next_state = state
-                    # Pour les agents avec replay buffer, gérer 'remember' et 'replay'
                     if algo not in ['MCTS', 'MCTS with Neural Networks', 'MCTS with Random Rollouts', 'AlphaZero', 'MuZero (Simplifié)'] and hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
                         agent.replay()
                     break
 
-                # Entraînement spécifique en fonction de l'algorithme
                 if algo in ['DQN', 'Double DQN avec Experience Replay', 'Double DQN avec Prioritized Experience Replay']:
                     if hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
@@ -330,19 +332,15 @@ def main():
                 state = next_state
                 total_reward += reward
 
-                # Vérifier si la partie est terminée après le tour de l'adversaire
                 if env.is_game_over():
                     done = True
-                    # Si la partie s'est terminée pendant le tour de l'adversaire, ajouter la récompense finale
                     if reward == 0.0:
                         final_reward = env.score()
                         total_reward += final_reward
-                        reward = final_reward  # Mettre à jour la récompense avec la récompense finale
-                    # Afficher l'état final de l'environnement
+                        reward = final_reward
                     print(env)
                     break
 
-            # Entraînement à la fin de l'épisode pour certains agents
             if algo in ['REINFORCE with Baseline', 'REINFORCE with Learned Critic']:
                 loss = agent.train()
                 losses.append(loss)
@@ -357,24 +355,20 @@ def main():
                     loss = agent.train(next_state, done)
                     losses.append(loss)
 
-            # Enregistrement du modèle si nécessaire
             if hasattr(agent, 'save'):
                 agent.save()
 
-            # Enregistrer la récompense totale de l'épisode
             episode_rewards.append(total_reward)
             if hasattr(agent, 'epsilon'):
                 epsilon.append(agent.epsilon)
 
-            # Ajouter le résultat à la liste `victory`
             if total_reward > 0:
-                victory.append(1)  # Victoire
+                victory.append(1)
             elif total_reward < 0:
-                victory.append(-1)  # Défaite
+                victory.append(-1)
             else:
-                victory.append(0)  # Match nul ou interruption
+                victory.append(0)
 
-            # Affichage des résultats par épisode
             print(f"Épisode {e + 1}/{EPISODES}, Récompense Totale: {total_reward}")
 
         print("Entraînement terminé.")
@@ -382,12 +376,9 @@ def main():
         print("Nombre de défaites : ", victory.count(-1))
         print("Nombre de matchs nuls ou d'interruptions de partie : ", victory.count(0))
 
-        # Affichage du graphique des récompenses cumulées
         plot_training_rewards(episode_rewards, algo)
-        # Affichage de l'évolution de epsilon si applicable
         if len(epsilon) > 0:
             plot_epsilon(epsilon, algo)
-        # Affichage des pertes si applicable
         if len(losses) > 0:
             plot_losses(losses, algo)
 

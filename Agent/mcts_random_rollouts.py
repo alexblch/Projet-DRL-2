@@ -1,76 +1,106 @@
 import numpy as np
-import random
+import threading
 
 class Node:
-    def __init__(self, state, parent=None, action=None):
+    def __init__(self, state, parent=None, prior_prob=1.0, action=None):
         self.state = state  # État de l'environnement à ce nœud
         self.parent = parent
-        self.action = action  # Action qui a mené à cet état
-        self.children = []
-        self.visits = 0
-        self.value = 0.0
-        self.untried_actions = None
+        self.action = action  # Action qui a mené à ce nœud depuis le parent
+        self.children = {}
+        self.visit_count = 0
+        self.value_sum = 0.0
+        self.prior_prob = prior_prob
+        self.lock = threading.Lock()  # Pour les opérations thread-safe
 
-    def is_fully_expanded(self):
-        return self.untried_actions is not None and len(self.untried_actions) == 0
+    def is_leaf(self):
+        # Pas besoin de verrou ici car nous ne modifions pas les enfants
+        return len(self.children) == 0
 
-    def expand(self):
-        if self.untried_actions is None:
-            self.untried_actions = self.state.available_actions_ids().tolist()
+    def expand(self, action_probs):
+        with self.lock:
+            for action, prob in action_probs.items():
+                if action not in self.children:
+                    next_state = self.state.clone()
+                    next_state.step(action)
+                    self.children[action] = Node(
+                        state=next_state,
+                        parent=self,
+                        prior_prob=prob,
+                        action=action  # Stocker l'action menant à cet enfant
+                    )
 
-    def add_child(self, action, next_state):
-        child = Node(state=next_state, parent=self, action=action)
-        self.children.append(child)
-        self.untried_actions.remove(action)
-        return child
+    def update(self, value):
+        with self.lock:
+            self.visit_count += 1
+            self.value_sum += value
 
-    def best_child(self, c_param=1.4):
-        choices_weights = [
-            (child.value / child.visits) +
-            c_param * np.sqrt(2 * np.log(self.visits) / child.visits)
-            for child in self.children
-        ]
-        return self.children[np.argmax(choices_weights)]
+    def value(self):
+        if self.visit_count == 0:
+            return 0
+        return self.value_sum / self.visit_count
 
-    def update(self, reward):
-        self.visits += 1
-        self.value += reward
+    def select(self, c_puct):
+        """
+        Sélectionne l'enfant avec le score UCB le plus élevé.
+        """
+        best_score = -np.inf
+        best_child = None
+
+        total_visits = sum(child.visit_count for child in self.children.values()) + 1
+
+        for child in self.children.values():
+            q_value = child.value()
+            u_value = c_puct * child.prior_prob * np.sqrt(total_visits) / (1 + child.visit_count)
+            score = q_value + u_value
+            if score > best_score:
+                best_score = score
+                best_child = child
+
+        return best_child
+
+
+
+import numpy as np
+import random
 
 class MCTSWithRandomRollouts:
-    def __init__(self, n_iterations=1000):
-        self.n_iterations = n_iterations
+    def __init__(self, env, n_simulations=1000, c_puct=1.4):
+        self.env = env
+        self.n_simulations = n_simulations
+        self.c_puct = c_puct
 
-    def choose_action(self, env):
-        root = Node(state=env.clone())
-        for _ in range(self.n_iterations):
+    def choose_action(self):
+        root = Node(state=self.env.clone())
+        for _ in range(self.n_simulations):
             node = root
-            state = env.clone()
+            state = self.env.clone()
 
             # Sélection
-            while not state.is_game_over() and node.is_fully_expanded() and node.children:
-                node = node.best_child()
-                state = node.state  # Synchronisation de l'état
+            path = []
+            while not node.is_leaf() and not state.is_game_over():
+                node = node.select(self.c_puct)
+                action = node.action
+                state.step(action)
+                path.append(node)
 
             # Expansion
             if not state.is_game_over():
-                node.expand()
-                if node.untried_actions:
-                    action = random.choice(node.untried_actions)
-                    next_state = state.clone()
-                    next_state.step(action)
-                    node = node.add_child(action, next_state)
-                    state = next_state  # Mettre à jour l'état pour la simulation
+                valid_actions = state.available_actions_ids()
+                # Probabilités uniformes pour les actions valides
+                prob = 1.0 / len(valid_actions)
+                action_probs = {action: prob for action in valid_actions}
+                node.expand(action_probs)
 
-            # Simulation par Random Rollout
-            reward = self.random_rollout(state)
+                # Simulation par random rollout
+                reward = self.random_rollout(state)
+            else:
+                reward = state.score()
 
             # Rétropropagation
-            while node is not None:
-                node.update(reward)
-                node = node.parent
+            self.backpropagate(node, reward)
 
-        # Retourne l'action avec le plus grand nombre de visites
-        best_child = max(root.children, key=lambda c: c.visits)
+        # Choisir l'action avec le plus de visites depuis la racine
+        best_child = max(root.children.values(), key=lambda n: n.visit_count)
         return best_child.action
 
     def random_rollout(self, state):
@@ -82,3 +112,10 @@ class MCTSWithRandomRollouts:
             current_state.step(action)
         reward = current_state.score()
         return reward
+
+    def backpropagate(self, node, reward):
+        """Met à jour les nœuds le long du chemin avec le résultat du rollout."""
+        while node is not None:
+            node.update(reward)
+            reward = -reward  # Inversion du résultat pour l'adversaire
+            node = node.parent
