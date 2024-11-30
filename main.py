@@ -16,6 +16,7 @@ from Agent.ppo import A2CAgent as PPOAgent
 from Agent.reinforce import REINFORCEAgent
 from Agent.mcts import MCTS
 from Agent.reinforce_baseline import REINFORCEWithBaselineAgent
+from Agent.reinforcebaselinelearnedcritic import REINFORCEWithBaselineLearnedCriticAgent  # Nouvel agent
 from Agent.mcts_with_NN import MCTSWithNN
 from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
 from Agent.alphazero import AlphaZeroAgent
@@ -121,25 +122,12 @@ def get_number_of_episodes():
 
     return n_episodes[0] if n_episodes else None
 
-
 def plot_training_rewards(episode_rewards, algo):
     plt.figure()
-    # Tracé des récompenses par épisode
-    plt.plot(episode_rewards, label='Récompenses Totales')
-    
-    # Calcul de la moyenne glissante sur 10 000 itérations
-    window_size = 1
-    if len(episode_rewards) >= window_size:
-        moving_average = np.convolve(episode_rewards, np.ones(window_size)/window_size, mode='valid')
-        plt.plot(range(window_size - 1, len(episode_rewards)), moving_average, label=f'Moyenne {window_size} Épisodes', color='orange')
-    else:
-        print("Attention : Moins de 10 000 épisodes, moyenne glissante non calculée.")
-    
-    # Ajustements graphiques
+    plt.plot(episode_rewards)
     plt.xlabel('Épisode')
     plt.ylabel('Récompense Totale')
     plt.title(f"Récompenses Totales par Épisode - {algo}")
-    plt.legend()
     plt.savefig(f"plots/{algo}_training_rewards.png")
     plt.show()
 
@@ -183,19 +171,19 @@ def choose_algorithm_gui():
     algorithms = [
         ("1 - DQN", "1"),
         ("2 - Double DQN avec Experience Replay", "2"),
-        ("3 - Double DQN (sans Experience Replay)", "13"),
-        ("4 - Double DQN avec Prioritized Experience Replay", "3"),
+        ("3 - Double DQN avec Prioritized Experience Replay", "3"),
+        ("4 - Double DQN (sans Experience Replay)", "4"),
         ("5 - REINFORCE", "5"),
-        ("6 - REINFORCE with Baseline", "8"),
-        ("7 - PPO", "4"),
-        ("8 - Agent aléatoire (Random)", "6"),
-        ("9 - MCTS", "7"),
-        ("10 - MCTS with Neural Networks", "9"),
-        ("11 - MCTS with Random Rollouts", "10"),
-        ("12 - AlphaZero", "11"),
-        ("13 - MuZero (Simplifié)", "12"),
+        ("6 - REINFORCE with Baseline", "6"),
+        ("7 - REINFORCE with Learned Critic", "7"),
+        ("8 - PPO", "8"),
+        ("9 - Agent aléatoire (Random)", "9"),
+        ("10 - MCTS", "10"),
+        ("11 - MCTS with Neural Networks", "11"),
+        ("12 - MCTS with Random Rollouts", "12"),
+        ("13 - AlphaZero", "13"),
+        ("14 - MuZero (Simplifié)", "14"),
     ]
-
 
     for text, value in algorithms:
         tk.Radiobutton(algo_window, text=text, variable=algo_var, value=value).pack(anchor=tk.W)
@@ -216,25 +204,27 @@ def choose_algorithm(env):
     elif choice == '3':
         return DoubleDQNAgentWithPrioritizedReplay(env), 'Double DQN avec Prioritized Experience Replay'
     elif choice == '4':
-        return PPOAgent(env), 'PPO'
+        return DoubleDQNAgentNoReplay(env), 'Double DQN (sans Experience Replay)'
     elif choice == '5':
         return REINFORCEAgent(env), 'REINFORCE'
     elif choice == '6':
-        return LuckyNumbersGameRandConsole(), 'Agent aléatoire'
-    elif choice == '7':
-        return MCTS(n_iterations=1000), 'MCTS'
-    elif choice == '8':
         return REINFORCEWithBaselineAgent(env), 'REINFORCE with Baseline'
+    elif choice == '7':
+        return REINFORCEWithBaselineLearnedCriticAgent(env), 'REINFORCE with Learned Critic'
+    elif choice == '8':
+        return PPOAgent(env), 'PPO'
     elif choice == '9':
-        return MCTSWithNN(env), 'MCTS with Neural Networks'
+        return LuckyNumbersGameRandConsole(), 'Agent aléatoire'
     elif choice == '10':
-        return MCTSWithRandomRollouts(n_iterations=1000), 'MCTS with Random Rollouts'
+        return MCTS(n_iterations=1000), 'MCTS'
     elif choice == '11':
-        return AlphaZeroAgent(env), 'AlphaZero'
+        return MCTSWithNN(env), 'MCTS with Neural Networks'
     elif choice == '12':
-        return MuZeroAgent(env), 'MuZero (Simplifié)'
+        return MCTSWithRandomRollouts(n_iterations=1000), 'MCTS with Random Rollouts'
     elif choice == '13':
-        return DoubleDQNAgentNoReplay(env), 'Double DQN (sans Experience Replay)'
+        return AlphaZeroAgent(env), 'AlphaZero'
+    elif choice == '14':
+        return MuZeroAgent(env), 'MuZero (Simplifié)'
     else:
         messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
         return DQNAgent(env), 'DQN'
@@ -298,8 +288,8 @@ def main():
                 elif algo == 'Double DQN (sans Experience Replay)':
                     action = agent.choose_action(state)
                 elif algo in ['A2C', 'PPO']:
-                    action_mask = env.action_mask()
-                    action, log_prob, value = agent.choose_action(state, action_mask)
+                    # action_mask = env.action_mask()  # Supprimé car non utilisé
+                    action, log_prob, value = agent.choose_action(state)
                 else:
                     action = agent.choose_action(state)
 
@@ -326,8 +316,13 @@ def main():
                 elif algo == 'Double DQN (sans Experience Replay)':
                     if hasattr(agent, 'learn'):
                         agent.learn(state, action, reward, next_state, done)
-                elif algo == 'REINFORCE with Baseline':
+                elif algo in ['REINFORCE with Baseline', 'REINFORCE with Learned Critic']:
                     agent.store_transition(state, action, reward)
+                elif algo in ['A2C', 'PPO']:
+                    agent.store_transition(state, action, reward, done, log_prob, value)
+                    if done or len(agent.states) >= agent.n_steps:
+                        loss = agent.train(next_state, done)
+                        losses.append(loss)
                 elif hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                     agent.remember(state, action, reward, next_state, done)
                     agent.replay()
@@ -348,15 +343,19 @@ def main():
                     break
 
             # Entraînement à la fin de l'épisode pour certains agents
-            if algo == 'REINFORCE with Baseline':
+            if algo in ['REINFORCE with Baseline', 'REINFORCE with Learned Critic']:
                 loss = agent.train()
                 losses.append(loss)
-            elif algo == 'AlphaZero':
+            elif algo in ['AlphaZero']:
                 winner = env.score()
                 agent.train(winner)
             elif algo == 'MuZero (Simplifié)':
                 winner = env.score()
                 agent.train(winner)
+            elif algo in ['A2C', 'PPO']:
+                if len(agent.states) > 0:
+                    loss = agent.train(next_state, done)
+                    losses.append(loss)
 
             # Enregistrement du modèle si nécessaire
             if hasattr(agent, 'save'):
