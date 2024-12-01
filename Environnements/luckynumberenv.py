@@ -48,8 +48,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         np.random.shuffle(self.numbers)
         self.agent_grid = np.full((self.size, self.size), -1, dtype=np.int32)
         self.opponent_grid = np.full((self.size, self.size), -1, dtype=np.int32)
-        self.place_initial_tiles(self.agent_grid)
-        self.place_initial_tiles(self.opponent_grid)
+        # Les grilles sont initialisées vides, suppression des appels à place_initial_tiles
         self.shared_cache = []
         self._is_game_over = False
         self._score = 0.0
@@ -57,13 +56,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         self.current_tile = -1
         return self.state_description()
 
-    def place_initial_tiles(self, grid):
-        # Placer des tuiles aléatoires sur la diagonale principale sans les trier
-        diagonal_positions = [(i, i) for i in range(self.size)]
-        initial_numbers = [self.numbers.pop() for _ in range(self.size)]
-        for pos, num in zip(diagonal_positions, initial_numbers):
-            row, col = pos
-            grid[row, col] = num
+    # Le reste du code reste inchangé
 
     def state_description(self) -> np.ndarray:
         # Encodage de la grille de l'agent
@@ -84,17 +77,17 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
     def available_actions_ids(self) -> np.ndarray:
         actions = []
         if self.current_tile == -1:
-            actions.append(self.ACTION_DRAW_FROM_DECK)
+            actions.append(int(self.ACTION_DRAW_FROM_DECK))
             # Actions pour prendre des tuiles spécifiques du cache
             unique_tiles = np.unique(self.shared_cache)
             for tile in unique_tiles:
-                action_id = self.ACTION_TAKE_FROM_CACHE_START + tile - 1
+                action_id = int(self.ACTION_TAKE_FROM_CACHE_START + tile - 1)
                 actions.append(action_id)
         else:
-            actions.append(self.ACTION_ADD_TO_CACHE)
+            actions.append(int(self.ACTION_ADD_TO_CACHE))
             valid_positions = self.get_valid_positions(self.agent_grid, self.current_tile)
             for idx in valid_positions:
-                action_id = self.ACTION_PLACE_TILE_START + idx
+                action_id = int(self.ACTION_PLACE_TILE_START + idx)
                 actions.append(action_id)
         return np.array(actions, dtype=np.int32)
 
@@ -105,6 +98,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         return mask
 
     def step(self, action: int):
+        action = int(action)  # Conversion en entier Python natif
         if self._is_game_over:
             # La partie est déjà terminée
             next_state = self.state_description()
@@ -343,6 +337,7 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         if number in grid:
             return []
         valid_positions = get_valid_positions_numba(grid, number)
+        valid_positions = [int(idx) for idx in valid_positions]  # Conversion en entiers Python natifs
         return valid_positions
 
     def is_grid_full(self, grid):
@@ -391,6 +386,19 @@ class LuckyNumbersEnv(DeepDiscreteActionsEnv):
         new_env.agent_turn = self.agent_turn
         new_env.current_tile = self.current_tile
         return new_env
+
+    def hash(self):
+        agent_grid_bytes = self.agent_grid.tobytes()
+        opponent_grid_bytes = self.opponent_grid.tobytes()
+        shared_cache_tuple = tuple(sorted(self.shared_cache))
+        state_tuple = (
+            agent_grid_bytes,
+            opponent_grid_bytes,
+            shared_cache_tuple,
+            self.current_tile,
+            self.agent_turn,
+        )
+        return hash(state_tuple)
 
 # Fonctions Numba
 @njit

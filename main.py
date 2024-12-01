@@ -5,10 +5,14 @@ import os
 import matplotlib.pyplot as plt
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+# Import des environnements
 from Environnements.luckynumberenv import LuckyNumbersEnv
 from Environnements.luckynumberrand import LuckyNumbersGameRandConsole, play_n_games
-from Environnements.grid import GridWorld
+from Environnements.grid import GridWorld  # Assurez-vous que le fichier s'appelle gridworldenv.py
 from Environnements.luckynumbergame import LuckyNumbersGame
+
+# Import des agents
 from Agent.dqn import DQNAgent
 from Agent.double_dqn_replay import DoubleDQNAgentWithReplay
 from Agent.double_dqn_with_p_replay import DoubleDQNAgentWithPrioritizedReplay
@@ -21,8 +25,6 @@ from Agent.alphazero import AlphaZeroAgent
 from Agent.muzero import MuZeroAgent
 from Agent.doubledqn import DoubleDQNAgent as DoubleDQNAgentNoReplay
 from Agent.mcts import MCTS
-
-# Importation de la nouvelle classe MCTSWithRandomRollouts
 from Agent.mcts_random_rollouts import MCTSWithRandomRollouts
 
 def clear_screen():
@@ -124,31 +126,52 @@ def get_number_of_episodes():
 
     return n_episodes[0] if n_episodes else None
 
-def plot_training_rewards(episode_rewards, algo):
+def moving_average(values, window):
+    """Calcule la moyenne mobile d'une liste de valeurs."""
+    weights = np.repeat(1.0, window) / window
+    sma = np.convolve(values, weights, 'valid')
+    return sma
+
+# Modification des fonctions de traçage pour inclure le nom du jeu
+def plot_training_rewards(episode_rewards, algo, game, window=1):
     plt.figure()
-    plt.plot(episode_rewards)
+    if window > 1:
+        rewards_sma = moving_average(episode_rewards, window)
+        plt.plot(range(window - 1, len(episode_rewards)), rewards_sma, label='Moyenne Mobile')
+    else:
+        plt.plot(episode_rewards, label='Récompense')
     plt.xlabel('Épisode')
     plt.ylabel('Récompense Totale')
-    plt.title(f"Récompenses Totales par Épisode - {algo}")
-    plt.savefig(f"plots/{algo}_training_rewards.png")
+    plt.title(f"{game} - Récompenses Totales par Épisode - {algo}")
+    plt.legend()
+    # Créer le dossier plots/game s'il n'existe pas
+    if not os.path.exists(f'plots/{game}'):
+        os.makedirs(f'plots/{game}')
+    plt.savefig(f"plots/{game}/{algo}_training_rewards.png")
     plt.show()
 
-def plot_epsilon(epsilon_values, algo):
+def plot_epsilon(epsilon_values, algo, game):
     plt.figure()
     plt.plot(epsilon_values)
     plt.xlabel('Épisode')
     plt.ylabel('Valeur de epsilon')
-    plt.title(f"Évolution de epsilon par Épisode - {algo}")
-    plt.savefig(f"plots/{algo}_epsilon.png")
+    plt.title(f"{game} - Évolution de epsilon par Épisode - {algo}")
+    # Créer le dossier plots/game s'il n'existe pas
+    if not os.path.exists(f'plots/{game}'):
+        os.makedirs(f'plots/{game}')
+    plt.savefig(f"plots/{game}/{algo}_epsilon.png")
     plt.show()
 
-def plot_losses(losses, algo):
+def plot_losses(losses, algo, game):
     plt.figure()
     plt.plot(losses)
     plt.xlabel('Épisode')
     plt.ylabel('Perte')
-    plt.title(f"Perte par Épisode - {algo}")
-    plt.savefig(f"plots/{algo}_losses.png")
+    plt.title(f"{game} - Perte par Épisode - {algo}")
+    # Créer le dossier plots/game s'il n'existe pas
+    if not os.path.exists(f'plots/{game}'):
+        os.makedirs(f'plots/{game}')
+    plt.savefig(f"plots/{game}/{algo}_losses.png")
     plt.show()
 
 def choose_algorithm_gui():
@@ -221,11 +244,8 @@ def choose_algorithm(env):
         return MCTS(env=env, n_iterations=1000), 'MCTS'
     elif choice == '11':
         return MCTSWithNN(env=env, n_iterations=1000), 'MCTS with Neural Networks'
-
     elif choice == '12':
         return MCTSWithRandomRollouts(env=env, n_simulations=1000), 'MCTS with Random Rollouts'
-
-
     elif choice == '13':
         return AlphaZeroAgent(env), 'AlphaZero'
     elif choice == '14':
@@ -233,6 +253,29 @@ def choose_algorithm(env):
     else:
         messagebox.showwarning("Choix invalide", "Choix invalide. Utilisation de DQN par défaut.")
         return DQNAgent(env), 'DQN'
+
+def get_moving_average_window():
+    window_size = []
+
+    def on_submit():
+        try:
+            n = int(entry.get())
+            if n <= 0:
+                raise ValueError
+            window_size.append(n)
+            window_size_window.destroy()
+        except ValueError:
+            messagebox.showerror("Entrée invalide", "Veuillez entrer un nombre entier positif.")
+
+    window_size_window = tk.Tk()
+    window_size_window.title("Taille de la Fenêtre de Moyenne Mobile")
+    tk.Label(window_size_window, text="Entrez la taille de la fenêtre pour la moyenne mobile :").pack(pady=10)
+    entry = tk.Entry(window_size_window)
+    entry.pack(pady=5)
+    tk.Button(window_size_window, text="Valider", command=on_submit).pack(pady=10)
+    window_size_window.mainloop()
+
+    return window_size[0] if window_size else None
 
 def main():
     action, game = choose_game()
@@ -376,11 +419,17 @@ def main():
         print("Nombre de défaites : ", victory.count(-1))
         print("Nombre de matchs nuls ou d'interruptions de partie : ", victory.count(0))
 
-        plot_training_rewards(episode_rewards, algo)
+        # Demander la taille de la fenêtre pour la moyenne mobile des récompenses
+        window_size = get_moving_average_window()
+        if window_size is None:
+            window_size = 1000  # Par défaut, moyenne sur 1000 épisodes
+
+        # Tracer la courbe des récompenses avec la moyenne mobile
+        plot_training_rewards(episode_rewards, algo, game, window=window_size)
         if len(epsilon) > 0:
-            plot_epsilon(epsilon, algo)
+            plot_epsilon(epsilon, algo, game)
         if len(losses) > 0:
-            plot_losses(losses, algo)
+            plot_losses(losses, algo, game)
 
     else:
         print("Option non reconnue ou fonctionnalité non implémentée.")
