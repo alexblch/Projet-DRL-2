@@ -357,6 +357,8 @@ def main():
                     break
 
                 if algo in ['DQN', 'Double DQN avec Experience Replay', 'Double DQN avec Prioritized Experience Replay']:
+                    if hasattr(agent, 'learn'):
+                        agent.learn(state, action, reward, next_state, done)
                     if hasattr(agent, 'remember') and hasattr(agent, 'replay'):
                         agent.remember(state, action, reward, next_state, done)
                         agent.replay()
