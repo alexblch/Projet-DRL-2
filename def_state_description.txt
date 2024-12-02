@@ -1,4 +1,3 @@
-
 Nombre total d'états et d'actions pour size=4
 
 1. Nombre total d'états possibles
@@ -43,5 +42,5 @@ Nombre total d'actions = 1 (piocher) + 20 (prendre du cache) + 1 (ajouter au cac
 Nombre total d'actions = 38.
 
 Résumé :
-- Nombre total d'états (en nombre de cases) : 16 (grille de l'agent) + 16 (grille de l’adversaire) + 20 (cache partagé) + 1 (tuile courante) + 1 (tour actuel) = 54.
+- Nombre total d'états : 21^16 x 21^16 x C(59, 19) x 21 x 2.
 - Nombre total d'actions : 38.

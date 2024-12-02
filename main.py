@@ -174,6 +174,8 @@ def plot_losses(losses, algo, game):
     plt.savefig(f"plots/{game}/{algo}_losses.png")
     plt.show()
 
+
+
 def choose_algorithm_gui():
     algo_choice = []
 
